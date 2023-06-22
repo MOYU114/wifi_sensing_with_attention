@@ -284,7 +284,7 @@ CSI_train = aa.values.astype('float32')
 
 CSI_train = CSI_train/np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train),14,2)#分成990组14*2(x,y)的向量
-Video_train = Video_train/[640,360] #输入的图像帧是640×360的，所以分别除以640和360归一化。
+Video_train = Video_train/[1280,720] #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
 Video_train = Video_train.reshape(len(Video_train),-1)
 
 # data = DataLoader(data, batch_size=500, shuffle=True)
