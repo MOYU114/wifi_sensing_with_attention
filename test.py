@@ -244,8 +244,8 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 400
 dv_output_dim = 28
-CSI_PATH="./data/CSI_wave1.csv"
-Video_PATH="./data/points_wave1.csv"
+CSI_PATH="./data/CSI_merged.csv"
+Video_PATH="./data/points_merged.csv"
 
 
 model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
@@ -307,18 +307,18 @@ Video_train = Video_train.reshape(len(Video_train),-1)
 data = np.hstack((Video_train,CSI_train))#merge(V,S)
 
 #将数据转换为PyTorch张量
-f_train = data[0:800,0:28]#只取了前800行数据
+f_train = data[0:33000,0:28]#只取了前800行数据
 # f = torch.from_numpy(data[0:100,0:50])
 # f = f.view(100,50,1,1,1)
-a_train = data[0:800,28:778]
+a_train = data[0:33000,28:778]
 # a = torch.from_numpy(data[0:100,50:800])
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
 batch_size = 200#如果调整训练集测试集大小，大小记得调整数值
 #剩余作为测试
-g = torch.from_numpy(data[800:900,0:28]).double()
-b = torch.from_numpy(data[800:900,28:778]).double()
-b = b.view(100,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+g = torch.from_numpy(data[34000:35000,0:28]).double()
+b = torch.from_numpy(data[35000:35000,28:778]).double()
+b = b.view(1000,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
 
 
 # 训练模型
