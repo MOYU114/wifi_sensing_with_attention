@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from torch.cuda.amp import autocast
+
 if(torch.cuda.is_available()):
     print("Using GPU for training.")
     device = torch.device("cuda:0")
@@ -98,6 +100,7 @@ class EncoderEs(nn.Module):
         v = self.conv(h)
         # print(v.shape)
         return v
+#for transformer
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model,dropout=0.1, max_len=5000):
         super(PositionalEncoding, self).__init__()
@@ -175,6 +178,8 @@ class Attention(nn.Module):
         # print(context_vector.shape)
         return context_vector
 
+
+
 class TeacherStudentModel(nn.Module):
     def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim):
         super(TeacherStudentModel, self).__init__()
@@ -236,23 +241,26 @@ student_weights = {"wV": 0.5, "wS": 1.0}
 # Initialize models
 ev_input_dim = 28
 ev_latent_dim = 64
-es_input_dim = 15
+es_input_dim = 10
 es_hidden_dim = 400
 dv_output_dim = 28
+CSI_PATH="./data/CSI_wave1.csv"
+Video_PATH="./data/points_wave1.csv"
 
-# device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
-student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device).to(device)
+
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
-criterion2 = nn.BCELoss()
+criterion2 = nn.BCEWithLogitsLoss() #使用autocast
+
 
 # aa=pd.read_csv('raw_data/CSI_ampt.csv',header=None)
 # ff=pd.read_csv('raw_data/human_points.csv',header=None)
-aa = pd.read_csv("CSI_ampt.csv", header=None)
-ff = pd.read_csv("test2_result.csv", header=None)
+aa = pd.read_csv(CSI_PATH, header=None)
+#aa = pd.read_csv(CSI_PATH, header=None,delimiter=",")
+ff = pd.read_csv(Video_PATH, header=None)
 
 def fillna_with_previous_values(s):
     non_nan_values = s[s.notna()].values
@@ -304,30 +312,30 @@ f_train = data[0:800,0:28]#只取了前800行数据
 # f = f.view(100,50,1,1,1)
 a_train = data[0:800,28:778]
 # a = torch.from_numpy(data[0:100,50:800])
-# a = a.view(100,50,15)
+# a = a.view(100,50,10)
 original_length = f_train.shape[0]
 batch_size = 200#如果调整训练集测试集大小，大小记得调整数值
 #剩余作为测试
 g = torch.from_numpy(data[800:900,0:28]).double()
 b = torch.from_numpy(data[800:900,28:778]).double()
-b = b.view(100,50,15)#如果调整训练集测试集大小，大小记得调整数值
+b = b.view(100,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
 
 
 # 训练模型
-num_epochs = 5
 
+num_epochs = 30
 for epoch in range(num_epochs):
-    
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
     f = torch.from_numpy(f_train[random_indices,:]).double()
     a = torch.from_numpy(a_train[random_indices,:]).double()
     f = f.view(batch_size,28,1,1,1)#.shape(batch_size,28,1,1,1)
-    a = a.view(batch_size,50,15)
+    a = a.view(batch_size,int(len(a_train[0])/10),10)
     if(torch.cuda.is_available()):
         f = f.cuda()
         a = a.cuda()
     try:
-        z, y, v, s = model(f, a)
+        with autocast():
+            z, y, v, s = model(f, a)
     except RuntimeError as exception:
         if "out of memory" in str(exception):
             print('WARNING: out of memory')
@@ -345,6 +353,7 @@ for epoch in range(num_epochs):
     label2 = torch.ones_like(target2)
     # label2 = torch.zeros_like(target2)
     fake_loss = criterion2(target2, label2)
+
     # print(fake_loss)
     teacher_loss = criterion1(y, f) + 0.5*(real_loss + fake_loss)
 
@@ -357,12 +366,16 @@ for epoch in range(num_epochs):
     # 反向传播和优化
     optimizer.zero_grad()
     # teacher_loss.backward()
+
     total_loss.backward()
     optimizer.step()
 
     # 打印训练信息
-    print(f"Epoch [{epoch+1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
-
+    print(f"TeacherStudentModel training:Epoch [{epoch+1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
+#参数传递
+student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
+student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
+student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
     b = b.to(device)
