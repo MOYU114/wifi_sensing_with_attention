@@ -2,23 +2,48 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-aa = pd.read_csv("CSI_ampt.csv", header=None)
-def fillna_with_previous_values(s):
-    non_nan_values = s[s.notna()].values
-    # Gets the location of the missing value
-    nan_indices = s.index[s.isna()]
-    # Calculate the number of elements to fill
-    n_fill = len(nan_indices)
-    # Count the number of repetitions required
-    n_repeat = int(np.ceil(n_fill / len(non_nan_values)))
-    # Generate the fill value
-    fill_values = np.tile(non_nan_values, n_repeat)[:n_fill]
-    # Fill missing value
-    s.iloc[nan_indices] = fill_values
-    return s
-aa=aa.apply(fillna_with_previous_values,axis=1)
-CSI_train = aa.values.astype('float32')
-CSI_train=CSI_train/np.max(CSI_train)
+#读取数据，并对数据进行处理，准备绘制图像
+CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
+Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
+#Video_OUTPUT_PATH="./data/points_walk1.csv"
+CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_PATH, header=None)
+Video_OUTPUT = pd.read_csv(Video_OUTPUT_PATH, header=None)
+CSI_OUTPUT=CSI_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
+Video_OUTPUT=Video_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
+CSI_OUTPUT = np.array(CSI_OUTPUT.tolist())
+Video_OUTPUT = np.array(Video_OUTPUT.tolist())
+SAVE_PATH="./data/output/photo/"
+def draw_single_pic(i,arrary,pic_name):
+    points_num = len(arrary[0])
+    x=[]
+    y=[]
+    colors = np.array(["red","red", "green","green","green","orange","orange","orange", "purple", "purple","purple","cyan","cyan","cyan" ])
+    for j in range(points_num):
+        x.append(arrary[i][j][0])
+        y.append(arrary[i][j][1])
+    #绘制点
+    plt.scatter(x, y,c = colors)
+    plt.gca().invert_yaxis()
+    #链接边
+    plt.plot([x[0], x[1]], [y[0], y[1]])
+    plt.plot([x[1], x[2]], [y[1], y[2]])
+    plt.plot([x[2], x[3]], [y[2], y[3]])
+    plt.plot([x[3], x[4]], [y[3], y[4]])
+    plt.plot([x[1], x[5]], [y[1], y[5]])
+    plt.plot([x[5], x[6]], [y[5], y[6]])
+    plt.plot([x[6], x[7]], [y[6], y[7]])
+    plt.plot([x[1], x[8]], [y[1], y[8]])
+    plt.plot([x[8], x[9]], [y[8], y[9]])
+    plt.plot([x[9], x[10]], [y[9], y[10]])
+    plt.plot([x[1], x[11]], [y[1], y[11]])
+    plt.plot([x[11], x[12]], [y[11], y[12]])
+    plt.plot([x[12], x[13]], [y[12], y[13]])
+    #plt.show()
+    plt.savefig(SAVE_PATH+pic_name)
+    plt.clf()
+pics_num = 10
+for i in range(pics_num):
+    num=i+1
+    draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
+    draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
 
-plt.plot(CSI_train[0][0:1000])
-plt.show()
