@@ -6,53 +6,53 @@ Created on Wed May 31 10:43:47 2023
 """
 import math
 from tqdm import tqdm, trange
-import torch, gc
+import torch,gc
 import torch.nn as nn
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
 from torch.cuda.amp import autocast
 
-if (torch.cuda.is_available()):
+if(torch.cuda.is_available()):
     print("Using GPU for training.")
     device = torch.device("cuda:0")
 else:
     print("Using CPU for training.")
     device = torch.device("cpu")
 
-
 # Teacher Model Components
 class EncoderEv(nn.Module):
     def __init__(self, input_dim):
         super(EncoderEv, self).__init__()
         self.gen = nn.Sequential(
-            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1,padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(0.2),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1,padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(0.2),
-            nn.Conv2d(32, 64, kernel_size=3,stride=1,padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(0.2)
-        )
+            nn.Conv3d(input_dim, 16, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(16),
+            nn.LeakyReLU(0.2),
+            nn.Conv3d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(32),
+            nn.LeakyReLU(0.2),
+            nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(64),
+            nn.LeakyReLU(0.2)
+            )
 
     def forward(self, x):
         x = self.gen(x)
         # print(x.shape)
         return x
 
-
 class DecoderDv(nn.Module):
     def __init__(self, latent_dim, output_dim):
         super(DecoderDv, self).__init__()
-        self.deconv1 = nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=1,padding=1)
-        self.bn1 = nn.BatchNorm2d(64)
+        self.deconv1 = nn.ConvTranspose3d(latent_dim, 64, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm3d(64)
         self.relu = nn.ReLU()
-        self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=1,padding=1)
-        self.bn2 = nn.BatchNorm2d(32)
+        self.deconv2 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm3d(32)
         self.relu = nn.ReLU()
-        self.deconv3 = nn.ConvTranspose2d(32, output_dim, kernel_size=3, stride=1,padding=1)
-        self.bn3 = nn.BatchNorm2d(28)
+        self.deconv3 = nn.ConvTranspose3d(32, output_dim, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm3d(28)
         self.relu = nn.ReLU()
 
     def forward(self, x):
@@ -61,25 +61,24 @@ class DecoderDv(nn.Module):
         x = self.relu(self.bn3(self.deconv3(x)))
         return x
 
-
 class DiscriminatorC(nn.Module):
     def __init__(self, input_dim):
         super(DiscriminatorC, self).__init__()
         self.f1 = nn.Sequential(
-            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1,padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(0.2)
-        )
+            nn.Conv3d(input_dim, 16, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(16),
+            nn.LeakyReLU(0.2)
+            )
         self.f2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=3, stride=1,padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(0.2)
-        )
+            nn.Conv3d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(32),
+            nn.LeakyReLU(0.2)
+            )
         self.out = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, stride=1,padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(64),
             nn.Sigmoid()
-        )
+            )
 
     def forward(self, x):
         x = self.f1(x)
@@ -87,26 +86,23 @@ class DiscriminatorC(nn.Module):
         x = self.out(x)
         return x
 
-
 # Student Model Components
 class EncoderEs(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super(EncoderEs, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=1, batch_first=True)
-        self.conv = nn.Conv2d(hidden_dim, latent_dim, kernel_size=3, stride=1,padding=1)
+        self.conv = nn.Conv3d(hidden_dim, latent_dim, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
         _, (h, _) = self.lstm(x)
         h = h[-1]  # Get the hidden state of the last LSTM unit
-        h = h.unsqueeze(2).unsqueeze(3)  # Add dimensions for 2D convolution
+        h = h.unsqueeze(2).unsqueeze(3).unsqueeze(4)  # Add dimensions for 3D convolution
         v = self.conv(h)
         # print(v.shape)
         return v
-
-
-# for transformer
+#for transformer
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
+    def __init__(self, d_model,dropout=0.1, max_len=5000):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         pe = torch.zeros(max_len, d_model)
@@ -120,19 +116,16 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
-
-
 class Transformer(nn.Module):
-    def __init__(self, hidden_dim):
-        super(Transformer, self).__init__()
-        self.transformer = nn.Transformer(d_model=hidden_dim, nhead=16, num_encoder_layers=12)
+    def __init__(self,hidden_dim):
+        super(Transformer,self).__init__()
+        self.transformer = nn.Transformer(d_model=hidden_dim,nhead=16, num_encoder_layers=12)
 
         self.positional_encoding = PositionalEncoding(hidden_dim, dropout=0)
         self.Linear = nn.Linear(hidden_dim, hidden_dim)
         self.softmax = nn.Softmax(dim=1)
-        self.Linear_to_1 = nn.Linear(hidden_dim, 1)
-
-    def forward(self, z, v):
+        self.Linear_to_1= nn.Linear(hidden_dim, 1)
+    def forward(self, z,v):
         # 去除多余的维度
         z = z.squeeze()
         v = v.squeeze()
@@ -141,7 +134,7 @@ class Transformer(nn.Module):
         src = self.Linear(v)
         tgt = self.Linear(z)
 
-        out = []
+        out=[]
         # 转置输入张量
         pbar = tqdm(total=len(src))
         for i in range(len(src)):
@@ -151,13 +144,13 @@ class Transformer(nn.Module):
 
             # 将准备好的数据送给transformer
             outi = self.transformer(srci, tgti)
-            outi = self.Linear_to_1(outi)
-            # outi=self.softmax(outi)
-            # min_max_scaler = MinMaxScaler()
-            # outi = min_max_scaler.fit_transform(outi)
+            outi=self.Linear_to_1(outi)
+            #outi=self.softmax(outi)
+            #min_max_scaler = MinMaxScaler()
+            #outi = min_max_scaler.fit_transform(outi)
             out.append(outi)
             pbar.update(1)
-            # 调整输出张量的形状
+        # 调整输出张量的形状
             gc.collect()
             torch.cuda.empty_cache()
         # 将列表中的所有张量拼接成一个大张量
@@ -166,62 +159,38 @@ class Transformer(nn.Module):
 
         return out
 
+class Attention(nn.Module):
+    def __init__(self, hidden_dim):
+        super(Attention, self).__init__()
+        self.linear = nn.Linear(hidden_dim * 2, hidden_dim)
+        self.softmax = nn.Softmax(dim=1)
 
-class ChannelAttentionModule(nn.Module):
-    def __init__(self, channel, ratio=16):
-        super(ChannelAttentionModule, self).__init__()
-        # 使用自适应池化缩减map的大小，保持通道不变
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.max_pool = nn.AdaptiveMaxPool2d(1)
-
-        self.shared_MLP = nn.Sequential(
-            nn.Conv2d(channel, channel // ratio, 1, bias=False),
-            nn.ReLU(),
-            nn.Conv2d(channel // ratio, channel, 1, bias=False)
-        )
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        avgout = self.shared_MLP(self.avg_pool(x))
-        maxout = self.shared_MLP(self.max_pool(x))
-        return self.sigmoid(avgout + maxout)
-
-
-class SpatialAttentionModule(nn.Module):
-    def __init__(self):
-        super(SpatialAttentionModule, self).__init__()
-        self.conv2d = nn.Conv2d(in_channels=2, out_channels=1, kernel_size=7, stride=1, padding=3)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        # map尺寸不变，缩减通道
-        avgout = torch.mean(x, dim=1, keepdim=True)
-        maxout, _ = torch.max(x, dim=1, keepdim=True)
-        out = torch.cat([avgout, maxout], dim=1)
-        out = self.sigmoid(self.conv2d(out))
-        return out
+    def forward(self, encoder_outputs, decoder_hidden):
+        encoder_outputs = encoder_outputs.view(len(encoder_outputs),64)
+        decoder_hidden = decoder_hidden.view(len(decoder_hidden),64)
+        # print(encoder_outputs.shape)
+        # decoder_hidden = decoder_hidden.unsqueeze(0)
+        # print(decoder_hidden.shape)
+        energy = self.linear(torch.cat((encoder_outputs, decoder_hidden), dim=1))
+        attention_weights = self.softmax(energy)
+        # print(attention_weights.shape)
+        context_vector = torch.sum(attention_weights * encoder_outputs, dim=1)
+        # print(context_vector.shape)
+        return context_vector
 
 
-class CBAM(nn.Module):
-    def __init__(self, channel):
-        super(CBAM, self).__init__()
-        self.channel_attention = ChannelAttentionModule(channel)
-        self.spatial_attention = SpatialAttentionModule()
 
-    def forward(self, x):
-        out = self.channel_attention(x) * x
-        out = self.spatial_attention(out) * out
-        return out
 class TeacherStudentModel(nn.Module):
     def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim):
         super(TeacherStudentModel, self).__init__()
         self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
         self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
         self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
-        self.CBAM=CBAM(ev_latent_dim).double()
+
+        self.attention = Attention(ev_latent_dim).double()
         self.Transformer = Transformer(ev_latent_dim).double()
         self.student_encoder_es = EncoderEs(es_input_dim, es_hidden_dim, ev_latent_dim).double()
-        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double()  # 分为了两个DS
+        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double() #分为了两个DS
 
     def forward(self, f, a):
         z = self.teacher_encoder_ev(f)
@@ -229,27 +198,22 @@ class TeacherStudentModel(nn.Module):
         # test = self.teacher_discriminator_c(f)
 
         v = self.student_encoder_es(a)
-        v_atti = self.CBAM(v)
-        # v_atti = v
-        s = self.student_decoder_ds(v_atti)
+        v_trans = self.Transformer(z,v)
+        #v_trans = v
+        s = self.student_decoder_ds(v_trans)
 
-        return z, y, v_atti, s
-
+        return z, y, v_trans, s
 
 class StudentModel(nn.Module):
     def __init__(self, dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim):
         super(StudentModel, self).__init__()
         self.student_encoder_es = EncoderEs(es_input_dim, es_hidden_dim, ev_latent_dim).double()
         self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double()
-        self.CBAM = CBAM(ev_latent_dim).double()
 
     def forward(self, x):
         v = self.student_encoder_es(x)
-        #v_atti=self.CBAM(v)
-        v_atti=v
-        s = self.student_decoder_ds(v_atti)
+        s = self.student_decoder_ds(v)
         return s
-
 
 # # Loss functions
 # def compute_teacher_loss(real_videos, fake_videos, discriminator_outputs_real, discriminator_outputs_fake):
@@ -280,21 +244,24 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 400
 dv_output_dim = 28
-CSI_PATH = "./data/CSI_merged.csv"
-Video_PATH = "./data/points_merged.csv"
-CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
-Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
+CSI_PATH="./data/CSI_merged.csv"
+Video_PATH="./data/points_merged.csv"
+CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
+Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
 
 model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
 
+
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
-criterion2 = nn.BCEWithLogitsLoss()  # 使用autocast
+criterion2 = nn.BCEWithLogitsLoss() #使用autocast
+
+
+
 
 aa = pd.read_csv(CSI_PATH, header=None)
-# aa = pd.read_csv(CSI_PATH, header=None,delimiter=",")
+#aa = pd.read_csv(CSI_PATH, header=None,delimiter=",")
 ff = pd.read_csv(Video_PATH, header=None)
-
 
 def fillna_with_previous_values(s):
     non_nan_values = s[s.notna()].values
@@ -309,9 +276,7 @@ def fillna_with_previous_values(s):
     # Fill missing value
     s.iloc[nan_indices] = fill_values
     return s
-
-
-aa = aa.apply(fillna_with_previous_values, axis=1)
+aa=aa.apply(fillna_with_previous_values,axis=1)
 
 # array_length = 50
 # result_array = np.zeros(array_length, dtype=int)
@@ -322,14 +287,14 @@ aa = aa.apply(fillna_with_previous_values, axis=1)
 #     else:
 #         result_array[i] = 3 * (i // 2) + 1
 
-Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为关键点坐标，按照xi，yi排序
+Video_train = ff.values.astype('float32')#共990行，每行28个数据，为关键点坐标，按照xi，yi排序
 # Video_train = Video_train[:,result_array]
 CSI_train = aa.values.astype('float32')
 
-CSI_train = CSI_train / np.max(CSI_train)
-Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
-Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
-Video_train = Video_train.reshape(len(Video_train), -1)
+CSI_train = CSI_train/np.max(CSI_train)
+Video_train = Video_train.reshape(len(Video_train),14,2)#分成990组14*2(x,y)的向量
+Video_train = Video_train/[1280,720] #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
+Video_train = Video_train.reshape(len(Video_train),-1)
 
 # data = DataLoader(data, batch_size=500, shuffle=True)
 
@@ -337,37 +302,38 @@ Video_train = Video_train.reshape(len(Video_train), -1)
 # Video_train = scaler.fit_transform(Video_train)
 # CSI_train = scaler.fit_transform(CSI_train)
 
-# Divide the training set and test set
+#Divide the training set and test set
 # data_train, data_test = train_test_split(data, test_size=0.2, random_state=0)
 
-data = np.hstack((Video_train, CSI_train))  # merge(V,S)
-data_length = len(data)
-train_data_length = int(data_length * 0.9)
-test_data_length = int(data_length - train_data_length)
-# 将数据转换为PyTorch张量
-f_train = data[0:train_data_length, 0:28]  # 只取了前data_length*0.9行数据
+data = np.hstack((Video_train,CSI_train))#merge(V,S)
+data_length=len(data)
+train_data_length=int(data_length*0.9)
+test_data_length=int(data_length-train_data_length)
+#将数据转换为PyTorch张量
+f_train = data[0:train_data_length,0:28]#只取了前data_length*0.9行数据
 # f = torch.from_numpy(data[0:100,0:50])
 # f = f.view(100,50,1,1,1)
-a_train = data[0:train_data_length, 28:778]
+a_train = data[0:train_data_length,28:778]
 # a = torch.from_numpy(data[0:100,50:800])
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
-batch_size = 200  # 如果调整训练集测试集大小，大小记得调整数值
-# 剩余作为测试
-g = torch.from_numpy(data[train_data_length:data_length, 0:28]).double()
-b = torch.from_numpy(data[train_data_length:data_length, 28:778]).double()
-b = b.view(test_data_length, int(len(a_train[0]) / 10), 10)  # 输入的维度可能不同，需要对输入大小进行动态调整
+batch_size = 200#如果调整训练集测试集大小，大小记得调整数值
+#剩余作为测试
+g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
+b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()
+b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+
 
 # 训练模型
 
-num_epochs = 500
+num_epochs = 30
 for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    f = torch.from_numpy(f_train[random_indices, :]).double()
-    a = torch.from_numpy(a_train[random_indices, :]).double()
-    f = f.view(batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
-    a = a.view(batch_size, int(len(a_train[0]) / 10), 10)
-    if (torch.cuda.is_available()):
+    f = torch.from_numpy(f_train[random_indices,:]).double()
+    a = torch.from_numpy(a_train[random_indices,:]).double()
+    f = f.view(batch_size,28,1,1,1)#.shape(batch_size,28,1,1,1)
+    a = a.view(batch_size,int(len(a_train[0])/10),10)
+    if(torch.cuda.is_available()):
         f = f.cuda()
         a = a.cuda()
     try:
@@ -385,17 +351,17 @@ for epoch in range(num_epochs):
     label = torch.ones_like(target)
     real_loss = criterion2(target, label)
     # print(real_loss)
-
-    target2 = 1 - model.teacher_discriminator_c(y)
+    
+    target2 = 1-model.teacher_discriminator_c(y)
     label2 = torch.ones_like(target2)
     # label2 = torch.zeros_like(target2)
     fake_loss = criterion2(target2, label2)
 
     # print(fake_loss)
-    teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
+    teacher_loss = criterion1(y, f) + 0.5*(real_loss + fake_loss)
 
     # 计算学生模型的损失
-    student_loss = 0.5 * criterion1(v, z) + criterion1(s, y)
+    student_loss = 0.5*criterion1(v, z) + criterion1(s, y)
 
     # 计算总体损失
     total_loss = teacher_loss + student_loss
@@ -408,9 +374,8 @@ for epoch in range(num_epochs):
     optimizer.step()
 
     # 打印训练信息
-    print(
-        f"TeacherStudentModel training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
-# 参数传递
+    print(f"TeacherStudentModel training:Epoch [{epoch+1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
+#参数传递
 student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
 student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
@@ -419,15 +384,15 @@ with torch.no_grad():
     b = b.to(device)
     g = g.to(device)
     r = student_model(b)
-    r = r.view(np.size(r, 0), np.size(r, 1))
+    r = r.view(np.size(r,0),np.size(r,1))
 
     loss = criterion1(r, g)
     # df = pd.DataFrame(r.numpy())
     # df.to_excel("result.xls", index=False)
-    print("loss:", loss)
+    print("loss:",loss)
     g = g.cpu()
     r = r.cpu()
-    gnp = g.numpy()
-    rnp = r.numpy()
-    np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
-    np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
+    gnp=g.numpy()
+    rnp=r.numpy()
+    np.savetxt(Video_OUTPUT_PATH, gnp,delimiter=',')
+    np.savetxt(CSI_OUTPUT_PATH, rnp,delimiter=',')
