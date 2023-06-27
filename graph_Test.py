@@ -1,18 +1,26 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-
+training = False
 #读取数据，并对数据进行处理，准备绘制图像
 CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
-#Video_OUTPUT_PATH="./data/points_walk1.csv"
-CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_PATH, header=None)
-Video_OUTPUT = pd.read_csv(Video_OUTPUT_PATH, header=None)
+CSI_OUTPUT_TRAINING_PATH="./data/output/CSI_merged_output_training.csv"
+Video_OUTPUT_TRAINING_PATH="./data/output/points_merged_output_training.csv"
+if training:
+    CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_TRAINING_PATH, header=None)
+    Video_OUTPUT = pd.read_csv(Video_OUTPUT_TRAINING_PATH, header=None)
+    SAVE_PATH = "./data/output/photo/training/"
+else:
+    CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_PATH, header=None)
+    Video_OUTPUT = pd.read_csv(Video_OUTPUT_PATH, header=None)
+    SAVE_PATH = "./data/output/photo/test/"
+
 CSI_OUTPUT=CSI_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
 Video_OUTPUT=Video_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
 CSI_OUTPUT = np.array(CSI_OUTPUT.tolist())
 Video_OUTPUT = np.array(Video_OUTPUT.tolist())
-SAVE_PATH="./data/output/photo/"
+
 def draw_single_pic(i,arrary,pic_name):
     points_num = len(arrary[0])
     x=[]
@@ -46,4 +54,6 @@ for i in range(pics_num):
     num=i+1
     draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
     draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
+    #draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
+    #draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
 
