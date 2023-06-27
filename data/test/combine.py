@@ -21,4 +21,4 @@ for file_path in file_paths:
 merged_data = pd.concat(data_frames, ignore_index=True)
 
 # Save the merged data as a new CSV file
-merged_data.to_csv("merged.csv", index=False)
+merged_data.to_csv("points_test_legwave.csv", index=False,header=None)
