@@ -230,6 +230,30 @@ class SELayer(nn.Module):
         y = self.avg_pool(x).view(b, c) #对应Squeeze操作
         y = self.fc(y).view(b, c, 1, 1) #对应Excitation操作
         return x * y.expand_as(x)
+class TeacherModel_G(nn.Module):
+    def __init__(self, ev_input_dim, ev_latent_dim, dv_output_dim):
+        super(TeacherModel_G, self).__init__()
+        self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
+        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
+
+        self.CBAM = CBAM(ev_latent_dim).double()
+        self.Transformer = Transformer(ev_latent_dim).double()
+        self.selayer = SELayer(ev_latent_dim).double()
+    def forward(self, f):
+        z = self.teacher_encoder_ev(f)
+        z_atti = self.selayer(z)
+        y = self.teacher_decoder_dv(z_atti)
+
+        return z, y
+class TeacherModel_D(nn.Module):
+    def __init__(self, ev_input_dim):
+        super(TeacherModel_D, self).__init__()
+        self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
+    def forward(self, input):
+        output = self.teacher_discriminator_c(input)
+        return output
+
+
 class TeacherStudentModel(nn.Module):
     def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim):
         super(TeacherStudentModel, self).__init__()
@@ -294,10 +318,10 @@ CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
 
 model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
-
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCEWithLogitsLoss()  # 使用autocast
+
 
 #50条子载波
 # aa = pd.read_csv(CSI_PATH, header=None)
@@ -310,15 +334,15 @@ aa = pd.DataFrame(data1)
 ff = pd.read_csv(Video_PATH, header=None)
 
 #50条子载波
-csi_test = pd.read_csv(CSI_test, header=None)
+CSI_test = pd.read_csv(CSI_test, header=None)
 #25条子载波
 # with open(CSI_test, "r") as csvfilee:
 #     csvreadere = csv.reader(csvfilee)
 #     data2 = list(csvreadere)  # 将读取的数据转换为列表
-# csi_test = pd.DataFrame(data2)
-# print(csi_test.shape)
+# CSI_test = pd.DataFrame(data2)
+# print(CSI_test.shape)
 
-video_test = pd.read_csv(Video_test, header=None)
+Video_test = pd.read_csv(Video_test, header=None)
 print(aa.shape)
 
 
@@ -337,7 +361,7 @@ def fillna_with_previous_values(s):
     return s
 
 aa = aa.apply(fillna_with_previous_values, axis=1)
-csi_test = csi_test.apply(fillna_with_previous_values,axis=1)
+CSI_test = CSI_test.apply(fillna_with_previous_values,axis=1)
 
 
 # array_length = 50
@@ -353,18 +377,18 @@ Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为
 # Video_train = Video_train[:,result_array]
 CSI_train = aa.values.astype('float32')
 
-csi_test = csi_test.values.astype('float32')
-video_test = video_test.values.astype('float32')
+CSI_test = CSI_test.values.astype('float32')
+Video_test = Video_test.values.astype('float32')
 
 CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
 Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
 Video_train = Video_train.reshape(len(Video_train), -1)
 
-csi_test = csi_test/np.max(csi_test)
-video_test = video_test.reshape(len(video_test),14,2)
-video_test = video_test/[1280,720] 
-video_test = video_test.reshape(len(video_test),-1)
+CSI_test = CSI_test/np.max(CSI_test)
+Video_test = Video_test.reshape(len(Video_test),14,2)
+Video_test = Video_test/[1280,720]
+Video_test = Video_test.reshape(len(Video_test),-1)
 
 
 # data = DataLoader(data, batch_size=500, shuffle=True)
@@ -376,37 +400,88 @@ video_test = video_test.reshape(len(video_test),-1)
 # Divide the training set and test set
 # data_train, data_test = train_test_split(data, test_size=0.2, random_state=0)
 data = np.hstack((Video_train,CSI_train))#merge(V,S)
-data_length=len(data)
-train_data_length=int(data_length*0.9)
-test_data_length=int(data_length-train_data_length)
+#data_length=len(data)
+#train_data_length=int(data_length*0.9)
+#test_data_length=int(data_length-train_data_length)
 batch_size = 200
 np.random.shuffle(data)#打乱data顺序，体现随机
+data0_length=len(data[0])
 
-f_train = data[0:train_data_length,0:28]#只取了前data_length*0.9行数据
+f_train = data[:,0:28]#只取了前data_length*0.9行数据
 # f = torch.from_numpy(data[0:100,0:50])
 # f = f.view(100,50,1,1,1)
-a_train = data[0:train_data_length,28:428]
+a_train = data[:,28:data0_length]
 # a = torch.from_numpy(data[0:100,50:800])
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
 batch_size = 200                  #如果调整训练集测试集大小，大小记得调整数值
-
+test_size=4000
 #剩余作为测试
 # g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
 # b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()
 # b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
 
-random_index = np.random.choice(video_test.shape[0], size=4000, replace=False)
-g = torch.from_numpy(video_test[random_index,:]).double()
-b = torch.from_numpy(csi_test[random_index,:]).double()
-b = b.view(4000,int(len(csi_test[0])/10),10)
+random_index = np.random.choice(Video_test.shape[0], size=test_size, replace=False)
+g = torch.from_numpy(Video_test[random_index,:]).double()
+b = torch.from_numpy(CSI_test[random_index,:]).double()
+b = b.view(test_size,int(len(CSI_test[0])/10),10)
 
 #记录损失值
 # loss_values = []
+#训练Teacher模型
+LR_G = 0.01
+LR_D = 0.01
+teacher_model_G=TeacherModel_G(ev_input_dim, ev_latent_dim, dv_output_dim).to(device)
+teacher_model_D=TeacherModel_D(ev_input_dim).to(device)
+optimizer_G = torch.optim.Adam(teacher_model_G.parameters(), lr=LR_G)
+optimizer_D = torch.optim.Adam(teacher_model_D.parameters(), lr=LR_D)
 
+Teacher_num_epochs = 2000
+for epoch in range(Teacher_num_epochs):
+    random_indices = np.random.choice(original_length, size=batch_size, replace=False)
+    f = torch.from_numpy(f_train[random_indices, :]).double()
+    f = f.view(batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
+    if (torch.cuda.is_available()):
+        f = f.cuda()
+    try:
+        with autocast():
+            z, y = teacher_model_G(f)
+    except RuntimeError as exception:
+        if "out of memory" in str(exception):
+            print('WARNING: out of memory')
+            if hasattr(torch.cuda, 'empty_cache'):
+                torch.cuda.empty_cache()
+            else:
+                raise exception
+    # 进行对抗学习
+    target = teacher_model_D(f)
+    label = torch.ones_like(target)
+    real_loss = criterion2(target, label)
+    # print(real_loss)
 
-# 训练模型
-num_epochs = 2
+    target2 = 1 - teacher_model_D(y)
+    label2 = torch.ones_like(target2)
+    # label2 = torch.zeros_like(target2)
+    fake_loss = criterion2(target2, label2)
+
+    teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
+
+    optimizer_D.zero_grad()
+    teacher_loss.backward(retain_graph=True)
+    optimizer_D.step()
+
+    optimizer_G.zero_grad()
+    fake_loss.backward()
+    optimizer_G.step()
+    # 打印训练信息
+    print(
+        f"TeacherModel training:Epoch [{epoch + 1}/{Teacher_num_epochs}], Teacher_G Loss: {fake_loss.item():.4f},Teacher_D Loss: {teacher_loss.item():.4f}")
+
+model.teacher_encoder_ev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
+#model.teacher_decoder_dv.load_state_dict(teacher_model_G.teacher_decoder_dv.state_dict())
+#model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discriminator_c.state_dict())
+# 训练TeacherStudent模型
+num_epochs = 1000
 for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
     f = torch.from_numpy(f_train[random_indices, :]).double()
@@ -461,14 +536,14 @@ for epoch in range(num_epochs):
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 
 #查看训练集效果
-# y = y.cpu()
-# s = s.cpu()
-# ynp = y.detach().numpy()
-# snp = s.detach().numpy()
-# ynp=ynp.squeeze()
-# snp=snp.squeeze()
-# np.savetxt("./data/output/CSI_merged_output_training.csv", ynp, delimiter=',')
-# np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=',')
+y = y.cpu()
+s = s.cpu()
+ynp = y.detach().numpy()
+snp = s.detach().numpy()
+ynp=ynp.squeeze()
+snp=snp.squeeze()
+np.savetxt("./data/output/CSI_merged_output_training.csv", ynp, delimiter=',')
+np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=',')
 
 
 
@@ -489,9 +564,9 @@ with torch.no_grad():
     # df = pd.DataFrame(r.numpy())
     # df.to_excel("result.xls", index=False)
     print("loss:", loss)
-    # g = g.cpu()
-    # r = r.cpu()
-    # gnp = g.numpy()
-    # rnp = r.numpy()
-    # np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
-    # np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
+    g = g.cpu()
+    r = r.cpu()
+    gnp = g.numpy()
+    rnp = r.numpy()
+    np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
+    np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
