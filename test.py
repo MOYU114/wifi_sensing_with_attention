@@ -6,13 +6,18 @@ Created on Wed May 31 10:43:47 2023
 """
 import math
 import csv
+import os
+from PIL import Image
+
 from tqdm import tqdm
 import torch, gc
 import torch.nn as nn
 import numpy as np
 import pandas as pd
 from torch.cuda.amp import autocast
-from torch.utils.data import random_split, DataLoader
+from torch.utils.data import random_split, DataLoader,Dataset
+import torchvision.transforms as transforms
+from torchvision.datasets import ImageFolder
 
 if (torch.cuda.is_available()):
     print("Using GPU for training.")
@@ -305,11 +310,12 @@ teacher_weights = {"wadv": 0.5, "wY": 1.0}
 student_weights = {"wV": 0.5, "wS": 1.0}
 
 # Initialize models
-ev_input_dim = 28
+ev_input_dim = 4
 ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 300
 dv_output_dim = 28
+'''
 CSI_PATH = "./data/CSI_train_legwave_25.csv"
 Video_PATH = "./data/points_train_legwave.csv"
 CSI_test="./data/CSI_test_legwave_25.csv"
@@ -425,7 +431,9 @@ random_index = np.random.choice(Video_test.shape[0], size=test_size, replace=Fal
 g = torch.from_numpy(Video_test[random_index,:]).double()
 b = torch.from_numpy(CSI_test[random_index,:]).double()
 b = b.view(test_size,int(len(CSI_test[0])/10),10)
+'''
 
+'''
 #记录损失值
 # loss_values = []
 #训练Teacher模型
@@ -477,62 +485,121 @@ for epoch in range(Teacher_num_epochs):
     print(
         f"TeacherModel training:Epoch [{epoch + 1}/{Teacher_num_epochs}], Teacher_G Loss: {fake_loss.item():.4f},Teacher_D Loss: {teacher_loss.item():.4f}")
 
-model.teacher_encoder_ev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
+#model.teacher_encoder_ev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
 #model.teacher_decoder_dv.load_state_dict(teacher_model_G.teacher_decoder_dv.state_dict())
 #model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discriminator_c.state_dict())
+'''
+CSI_PATH = "./data/CSI_train_legwave_25.csv"
+Video_PATH = "./data/input/training/"
+CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
+Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
+pics_nums=4000
+
+model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
+criterion1 = nn.MSELoss()
+criterion2 = nn.BCEWithLogitsLoss()  # 使用autocast
+with open(CSI_PATH, "r") as csvfile:
+    csvreader = csv.reader(csvfile)
+    data1 = list(csvreader)  # 将读取的数据转换为列表
+aa = pd.DataFrame(data1)
+def fillna_with_previous_values(s):
+    non_nan_values = s[s.notna()].values
+    # Gets the location of the missing value
+    nan_indices = s.index[s.isna()]
+    # Calculate the number of elements to fill
+    n_fill = len(nan_indices)
+    # Count the number of repetitions required
+    n_repeat = int(np.ceil(n_fill / len(non_nan_values)))
+    # Generate the fill value
+    fill_values = np.tile(non_nan_values, n_repeat)[:n_fill]
+    # Fill missing value
+    s.iloc[nan_indices] = fill_values
+    return s
+
+aa = aa.apply(fillna_with_previous_values, axis=1)
+
+class CustomDataset(Dataset):
+    def __init__(self, image_folder_path, input_vectors):
+        self.image_paths = [os.path.join(image_folder_path, f) for f in os.listdir(image_folder_path)]
+        self.input_vectors = input_vectors
+        # 定义图像转换
+        self.transform = transforms.Compose([
+            transforms.Resize((240, 320)),  # 缩小图像到320x240像素
+            transforms.ToTensor()
+        ])
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        input_vector = self.input_vectors[idx]
+        image = Image.open(image_path)
+        image = transforms.ToTensor()(image)
+        return image, input_vector
+
+image_folder_path = Video_PATH
+CSI_train = aa.values.astype('float32')
+CSI_train = CSI_train / np.max(CSI_train)
+input_vectors=CSI_train[:4000]
+
+dataset = CustomDataset(image_folder_path, input_vectors)
+batch_size = 3
+CSI_len=len(input_vectors[0])
+
 # 训练TeacherStudent模型
 num_epochs = 1000
 for epoch in range(num_epochs):
-    random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    f = torch.from_numpy(f_train[random_indices, :]).double()
-    a = torch.from_numpy(a_train[random_indices, :]).double()
-    f = f.view(batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
-    a = a.view(batch_size, int(len(a_train[0]) / 10), 10)
-    if (torch.cuda.is_available()):
-        f = f.cuda()
-        a = a.cuda()
-    try:
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    for f,a in dataloader:
+        f=f.double()
+        a=a.double()
+        a = a.view(batch_size, int(len(input_vectors[0])/ 10) , 10)
+
+        if (torch.cuda.is_available()):
+            f = f.cuda()
+            a = a.cuda()
+        #try:
         with autocast():
             z, y, v, s = model(f, a)
-    except RuntimeError as exception:
-        if "out of memory" in str(exception):
-            print('WARNING: out of memory')
-            if hasattr(torch.cuda, 'empty_cache'):
-                torch.cuda.empty_cache()
-            else:
-                raise exception
-    # 计算教师模型的损失
-    target = model.teacher_discriminator_c(f)
-    label = torch.ones_like(target)
-    real_loss = criterion2(target, label)
-    # print(real_loss)
+        #except RuntimeError as exception:
+        #    if "out of memory" in str(exception):
+        #        print('WARNING: out of memory')
+        #        if hasattr(torch.cuda, 'empty_cache'):
+        #            torch.cuda.empty_cache()
+        #        else:
+        #            raise exception
+        # 计算教师模型的损失
+        target = model.teacher_discriminator_c(f)
+        label = torch.ones_like(target)
+        real_loss = criterion2(target, label)
+        # print(real_loss)
 
-    target2 = 1 - model.teacher_discriminator_c(y)
-    label2 = torch.ones_like(target2)
-    # label2 = torch.zeros_like(target2)
-    fake_loss = criterion2(target2, label2)
+        target2 = 1 - model.teacher_discriminator_c(y)
+        label2 = torch.ones_like(target2)
+        # label2 = torch.zeros_like(target2)
+        fake_loss = criterion2(target2, label2)
 
-    # print(fake_loss)
-    teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
+        # print(fake_loss)
+        teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
 
-    # 计算学生模型的损失
-    student_loss = 0.5 * criterion1(v, z) + criterion1(s, y)
+        # 计算学生模型的损失
+        student_loss = 0.5 * criterion1(v, z) + criterion1(s, y)
 
-    # 计算总体损失
-    total_loss = teacher_loss + student_loss
-    # loss_values.append(total_loss) #记录损失值
+        # 计算总体损失
+        total_loss = teacher_loss + student_loss
+        # loss_values.append(total_loss) #记录损失值
 
-    # 反向传播和优化
-    optimizer.zero_grad()
-    # teacher_loss.backward()
+        # 反向传播和优化
+        optimizer.zero_grad()
+        # teacher_loss.backward()
 
-    total_loss.backward()
-    optimizer.step()
+        total_loss.backward()
+        optimizer.step()
 
-    # 打印训练信息
-    print(
-        f"TeacherStudentModel training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
-    
+        # 打印训练信息
+        print(f"TeacherStudentModel training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
+
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 
 #查看训练集效果
@@ -555,18 +622,20 @@ student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_
 student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
-    b = b.to(device)
-    g = g.to(device)
-    r = student_model(b)
-    r = r.view(np.size(r, 0), np.size(r, 1))
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    for b, g in dataloader:
+        b = b.to(device)
+        g = g.to(device)
+        r = student_model(b)
+        r = r.view(np.size(r, 0), np.size(r, 1))
 
-    loss = criterion1(r, g)
-    # df = pd.DataFrame(r.numpy())
-    # df.to_excel("result.xls", index=False)
-    print("loss:", loss)
-    g = g.cpu()
-    r = r.cpu()
-    gnp = g.numpy()
-    rnp = r.numpy()
-    np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
-    np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
+        loss = criterion1(r, g)
+        # df = pd.DataFrame(r.numpy())
+        # df.to_excel("result.xls", index=False)
+        print("loss:", loss)
+        g = g.cpu()
+        r = r.cpu()
+        gnp = g.numpy()
+        rnp = r.numpy()
+        np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
+        np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')

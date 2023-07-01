@@ -50,6 +50,7 @@ def draw_single_pic(i,arrary,pic_name):
     plt.savefig(SAVE_PATH+pic_name)
     plt.clf()
 pics_num = 10
+
 for i in range(pics_num):
     num=i+1
     draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
