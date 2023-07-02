@@ -15,7 +15,7 @@ import torch.nn as nn
 import numpy as np
 import pandas as pd
 from torch.cuda.amp import autocast
-from torch.utils.data import random_split, DataLoader,Dataset
+from torch.utils.data import random_split, DataLoader,Dataset,RandomSampler
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 
@@ -32,34 +32,37 @@ class EncoderEv(nn.Module):
     def __init__(self, input_dim):
         super(EncoderEv, self).__init__()
         self.gen = nn.Sequential(
-            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1),
             nn.BatchNorm2d(64),
             nn.ReLU()
         )
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
     def forward(self, x):
         x = self.gen(x)
+        x = self.avgpool(x)
         # print(x.shape)
         return x
 
 
+'''
 class DecoderDv(nn.Module):
     def __init__(self, latent_dim, output_dim):
         super(DecoderDv, self).__init__()
-        self.deconv1 = nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=1, padding=1)
+        self.deconv1 = nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=1)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
-        self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=1, padding=1)
+        self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=1)
         self.bn2 = nn.BatchNorm2d(32)
         self.relu = nn.ReLU()
-        self.deconv3 = nn.ConvTranspose2d(32, output_dim, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(28)
+        self.deconv3 = nn.ConvTranspose2d(32, output_dim, kernel_size=3, stride=1)
+        self.bn3 = nn.BatchNorm2d(output_dim)
         self.relu = nn.ReLU()
 
     def forward(self, x):
@@ -68,22 +71,45 @@ class DecoderDv(nn.Module):
         x = self.relu(self.bn3(self.deconv3(x)))
         return x
 
+'''
+
+class DecoderDv(nn.Module):
+    def __init__(self, latent_dim, output_dim,pic_w,pic_h):
+        super(DecoderDv, self).__init__()
+        self.deconv1 = nn.ConvTranspose2d(latent_dim, 64, kernel_size=4, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU()
+        self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.relu = nn.ReLU()
+        self.deconv3 = nn.ConvTranspose2d(32, output_dim, kernel_size=4, stride=2, padding=1)
+        self.bn3 = nn.BatchNorm2d(output_dim)
+        self.relu = nn.ReLU()
+        self.upsample = nn.Upsample(size=(pic_h,pic_w), mode='bilinear', align_corners=True)
+
+    def forward(self, x):
+        x = self.relu(self.bn1(self.deconv1(x)))
+        x = self.relu(self.bn2(self.deconv2(x)))
+        x = self.relu(self.bn3(self.deconv3(x)))
+        x = self.upsample(x)
+        return x
+
 
 class DiscriminatorC(nn.Module):
     def __init__(self, input_dim):
         super(DiscriminatorC, self).__init__()
         self.f1 = nn.Sequential(
-            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1),
             nn.BatchNorm2d(16),
             nn.ReLU()
         )
         self.f2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1),
             nn.BatchNorm2d(32),
             nn.ReLU()
         )
         self.out = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1),
             nn.BatchNorm2d(64),
             nn.Sigmoid()
         )
@@ -100,7 +126,7 @@ class EncoderEs(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super(EncoderEs, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=1, batch_first=True)
-        self.conv = nn.Conv2d(hidden_dim, latent_dim, kernel_size=3, stride=1, padding=1)
+        self.conv = nn.Conv2d(hidden_dim, latent_dim, kernel_size=3, stride=1,padding=1)
 
     def forward(self, x):
         _, (h, _) = self.lstm(x)
@@ -260,14 +286,14 @@ class TeacherModel_D(nn.Module):
 
 
 class TeacherStudentModel(nn.Module):
-    def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim):
+    def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim,pic_w,pic_h):
         super(TeacherStudentModel, self).__init__()
         self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
-        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
+        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim,pic_w,pic_h).double()
         self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
 
         self.student_encoder_es = EncoderEs(es_input_dim, es_hidden_dim, ev_latent_dim).double()
-        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double()  # 分为了两个DS
+        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim,pic_w,pic_h).double()  # 分为了两个DS
 
         self.CBAM = CBAM(ev_latent_dim).double()
         self.Transformer = Transformer(ev_latent_dim).double()
@@ -287,10 +313,10 @@ class TeacherStudentModel(nn.Module):
 
 
 class StudentModel(nn.Module):
-    def __init__(self, dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim):
+    def __init__(self, dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim,pic_w,pic_h):
         super(StudentModel, self).__init__()
         self.student_encoder_es = EncoderEs(es_input_dim, es_hidden_dim, ev_latent_dim).double()
-        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double()
+        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim,pic_w,pic_h).double()
         self.CBAM = CBAM(ev_latent_dim).double()
 
     def forward(self, x):
@@ -310,192 +336,29 @@ teacher_weights = {"wadv": 0.5, "wY": 1.0}
 student_weights = {"wV": 0.5, "wS": 1.0}
 
 # Initialize models
-ev_input_dim = 4
+ev_input_dim = 3
 ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 300
-dv_output_dim = 28
-'''
-CSI_PATH = "./data/CSI_train_legwave_25.csv"
-Video_PATH = "./data/points_train_legwave.csv"
-CSI_test="./data/CSI_test_legwave_25.csv"
-Video_test="./data/points_test_legwave.csv"
+dv_output_dim = 3
+
+CSI_PATH = "./data/CSI_wave5.csv"
+Video_PATH = "./data/image_wave5/"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
 
-model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
-criterion1 = nn.MSELoss()
-criterion2 = nn.BCEWithLogitsLoss()  # 使用autocast
+# 获取文件夹中的所有文件名
+file_names = os.listdir(Video_PATH)
+# 选择第一个文件
+file_name = file_names[0]
+# 构造文件的完整路径
+file_path = os.path.join(Video_PATH, file_name)
+# 打开图像文件
+image = Image.open(file_path)
+# 获取图像的宽度和高度
+pic_w, pic_h = image.size
 
-
-#50条子载波
-# aa = pd.read_csv(CSI_PATH, header=None)
-#25条子载波否则会报错ParserError: Error tokenizing data. C error: Expected 75 fields in line 20, saw 100
-with open(CSI_PATH, "r") as csvfile:
-    csvreader = csv.reader(csvfile)
-    data1 = list(csvreader)  # 将读取的数据转换为列表
-aa = pd.DataFrame(data1)
-
-ff = pd.read_csv(Video_PATH, header=None)
-
-#50条子载波
-CSI_test = pd.read_csv(CSI_test, header=None)
-#25条子载波
-# with open(CSI_test, "r") as csvfilee:
-#     csvreadere = csv.reader(csvfilee)
-#     data2 = list(csvreadere)  # 将读取的数据转换为列表
-# CSI_test = pd.DataFrame(data2)
-# print(CSI_test.shape)
-
-Video_test = pd.read_csv(Video_test, header=None)
-print(aa.shape)
-
-
-def fillna_with_previous_values(s):
-    non_nan_values = s[s.notna()].values
-    # Gets the location of the missing value
-    nan_indices = s.index[s.isna()]
-    # Calculate the number of elements to fill
-    n_fill = len(nan_indices)
-    # Count the number of repetitions required
-    n_repeat = int(np.ceil(n_fill / len(non_nan_values)))
-    # Generate the fill value
-    fill_values = np.tile(non_nan_values, n_repeat)[:n_fill]
-    # Fill missing value
-    s.iloc[nan_indices] = fill_values
-    return s
-
-aa = aa.apply(fillna_with_previous_values, axis=1)
-CSI_test = CSI_test.apply(fillna_with_previous_values,axis=1)
-
-
-# array_length = 50
-# result_array = np.zeros(array_length, dtype=int)
-
-# for i in range(array_length):
-#     if i % 2 == 0:
-#         result_array[i] = 3 * (i // 2)
-#     else:
-#         result_array[i] = 3 * (i // 2) + 1
-
-Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为关键点坐标，按照xi，yi排序
-# Video_train = Video_train[:,result_array]
-CSI_train = aa.values.astype('float32')
-
-CSI_test = CSI_test.values.astype('float32')
-Video_test = Video_test.values.astype('float32')
-
-CSI_train = CSI_train / np.max(CSI_train)
-Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
-Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
-Video_train = Video_train.reshape(len(Video_train), -1)
-
-CSI_test = CSI_test/np.max(CSI_test)
-Video_test = Video_test.reshape(len(Video_test),14,2)
-Video_test = Video_test/[1280,720]
-Video_test = Video_test.reshape(len(Video_test),-1)
-
-
-# data = DataLoader(data, batch_size=500, shuffle=True)
-
-# scaler = MinMaxScaler()
-# Video_train = scaler.fit_transform(Video_train)
-# CSI_train = scaler.fit_transform(CSI_train)
-
-# Divide the training set and test set
-# data_train, data_test = train_test_split(data, test_size=0.2, random_state=0)
-data = np.hstack((Video_train,CSI_train))#merge(V,S)
-#data_length=len(data)
-#train_data_length=int(data_length*0.9)
-#test_data_length=int(data_length-train_data_length)
-batch_size = 200
-np.random.shuffle(data)#打乱data顺序，体现随机
-data0_length=len(data[0])
-
-f_train = data[:,0:28]#只取了前data_length*0.9行数据
-# f = torch.from_numpy(data[0:100,0:50])
-# f = f.view(100,50,1,1,1)
-a_train = data[:,28:data0_length]
-# a = torch.from_numpy(data[0:100,50:800])
-# a = a.view(100,50,10)
-original_length = f_train.shape[0]
-batch_size = 200                  #如果调整训练集测试集大小，大小记得调整数值
-test_size=4000
-#剩余作为测试
-# g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
-# b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()
-# b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
-
-random_index = np.random.choice(Video_test.shape[0], size=test_size, replace=False)
-g = torch.from_numpy(Video_test[random_index,:]).double()
-b = torch.from_numpy(CSI_test[random_index,:]).double()
-b = b.view(test_size,int(len(CSI_test[0])/10),10)
-'''
-
-'''
-#记录损失值
-# loss_values = []
-#训练Teacher模型
-LR_G = 0.01
-LR_D = 0.01
-teacher_model_G=TeacherModel_G(ev_input_dim, ev_latent_dim, dv_output_dim).to(device)
-teacher_model_D=TeacherModel_D(ev_input_dim).to(device)
-optimizer_G = torch.optim.Adam(teacher_model_G.parameters(), lr=LR_G)
-optimizer_D = torch.optim.Adam(teacher_model_D.parameters(), lr=LR_D)
-
-Teacher_num_epochs = 2000
-for epoch in range(Teacher_num_epochs):
-    random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    f = torch.from_numpy(f_train[random_indices, :]).double()
-    f = f.view(batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
-    if (torch.cuda.is_available()):
-        f = f.cuda()
-    try:
-        with autocast():
-            z, y = teacher_model_G(f)
-    except RuntimeError as exception:
-        if "out of memory" in str(exception):
-            print('WARNING: out of memory')
-            if hasattr(torch.cuda, 'empty_cache'):
-                torch.cuda.empty_cache()
-            else:
-                raise exception
-    # 进行对抗学习
-    target = teacher_model_D(f)
-    label = torch.ones_like(target)
-    real_loss = criterion2(target, label)
-    # print(real_loss)
-
-    target2 = 1 - teacher_model_D(y)
-    label2 = torch.ones_like(target2)
-    # label2 = torch.zeros_like(target2)
-    fake_loss = criterion2(target2, label2)
-
-    teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
-
-    optimizer_D.zero_grad()
-    teacher_loss.backward(retain_graph=True)
-    optimizer_D.step()
-
-    optimizer_G.zero_grad()
-    fake_loss.backward()
-    optimizer_G.step()
-    # 打印训练信息
-    print(
-        f"TeacherModel training:Epoch [{epoch + 1}/{Teacher_num_epochs}], Teacher_G Loss: {fake_loss.item():.4f},Teacher_D Loss: {teacher_loss.item():.4f}")
-
-#model.teacher_encoder_ev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
-#model.teacher_decoder_dv.load_state_dict(teacher_model_G.teacher_decoder_dv.state_dict())
-#model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discriminator_c.state_dict())
-'''
-CSI_PATH = "./data/CSI_train_legwave_25.csv"
-Video_PATH = "./data/input/training/"
-CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
-Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
-pics_nums=4000
-
-model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
+model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim,pic_w, pic_h).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCEWithLogitsLoss()  # 使用autocast
@@ -520,12 +383,12 @@ def fillna_with_previous_values(s):
 aa = aa.apply(fillna_with_previous_values, axis=1)
 
 class CustomDataset(Dataset):
-    def __init__(self, image_folder_path, input_vectors):
-        self.image_paths = [os.path.join(image_folder_path, f) for f in os.listdir(image_folder_path)]
+    def __init__(self, image_folder_path, input_vectors, pics_num):
+        self.image_paths = [os.path.join(image_folder_path, f) for f in os.listdir(image_folder_path)][:pics_num]
         self.input_vectors = input_vectors
         # 定义图像转换
         self.transform = transforms.Compose([
-            transforms.Resize((240, 320)),  # 缩小图像到320x240像素
+            transforms.Resize((300,300)),  # 缩小图像到300*300像素
             transforms.ToTensor()
         ])
     def __len__(self):
@@ -538,19 +401,30 @@ class CustomDataset(Dataset):
         image = transforms.ToTensor()(image)
         return image, input_vector
 
+
+
 image_folder_path = Video_PATH
 CSI_train = aa.values.astype('float32')
 CSI_train = CSI_train / np.max(CSI_train)
-input_vectors=CSI_train[:4000]
+input_vectors=CSI_train
+pics_num=len(CSI_train)#图片个数由CSI个数而定
 
-dataset = CustomDataset(image_folder_path, input_vectors)
-batch_size = 3
+dataset = CustomDataset(image_folder_path, input_vectors,pics_num)
+num_samples = 100#选取的图像数，可看作batchsize
 CSI_len=len(input_vectors[0])
+batch_size=10#10个一组训练
+
+
+
+
+
 
 # 训练TeacherStudent模型
-num_epochs = 1000
+num_epochs = 5
 for epoch in range(num_epochs):
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    sampler = RandomSampler(dataset, num_samples=num_samples, replacement=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
+    pbar = tqdm(total=len(dataloader))
     for f,a in dataloader:
         f=f.double()
         a=a.double()
@@ -562,6 +436,7 @@ for epoch in range(num_epochs):
         #try:
         with autocast():
             z, y, v, s = model(f, a)
+
         #except RuntimeError as exception:
         #    if "out of memory" in str(exception):
         #        print('WARNING: out of memory')
@@ -570,6 +445,8 @@ for epoch in range(num_epochs):
         #        else:
         #            raise exception
         # 计算教师模型的损失
+        gc.collect()
+        torch.cuda.empty_cache()
         target = model.teacher_discriminator_c(f)
         label = torch.ones_like(target)
         real_loss = criterion2(target, label)
@@ -596,46 +473,55 @@ for epoch in range(num_epochs):
 
         total_loss.backward()
         optimizer.step()
-
+        pbar.update(1)
+        gc.collect()
+        torch.cuda.empty_cache()
         # 打印训练信息
-        print(f"TeacherStudentModel training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
+    print(f"TeacherStudentModel training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
 
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 
 #查看训练集效果
-y = y.cpu()
-s = s.cpu()
-ynp = y.detach().numpy()
-snp = s.detach().numpy()
-ynp=ynp.squeeze()
-snp=snp.squeeze()
-np.savetxt("./data/output/CSI_merged_output_training.csv", ynp, delimiter=',')
-np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=',')
+#y = y.cpu()
+#s = s.cpu()
+#ynp = y.detach().numpy()
+#snp = s.detach().numpy()
+#ynp=ynp.squeeze()
+#snp=snp.squeeze()
+#np.savetxt("./data/output/CSI_merged_output_training.csv", ynp, delimiter=',')
+#np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=',')
 
 
 
 
 
 # 参数传递
-student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
+student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim,pic_w, pic_h).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
 student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
+
 # 在测试阶段只有学生模型的自编码器工作
+test_data_length=10
+#student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim,pic_w, pic_h).to(device)
 with torch.no_grad():
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    for b, g in dataloader:
+    sampler = RandomSampler(dataset, num_samples=test_data_length, replacement=True)
+    dataloader = DataLoader(dataset, batch_size=test_data_length, sampler=sampler)
+    for g,b  in dataloader:
+        b = b.double()
+        g = g.double()
+        b = b.view(test_data_length, int(len(input_vectors[0]) / 10), 10)
         b = b.to(device)
         g = g.to(device)
         r = student_model(b)
-        r = r.view(np.size(r, 0), np.size(r, 1))
+        #r = r.view(np.size(r, 0), np.size(r, 1))
 
         loss = criterion1(r, g)
         # df = pd.DataFrame(r.numpy())
         # df.to_excel("result.xls", index=False)
         print("loss:", loss)
-        g = g.cpu()
-        r = r.cpu()
-        gnp = g.numpy()
-        rnp = r.numpy()
-        np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
-        np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
+        #g = g.cpu()
+        #r = r.cpu()
+        #gnp = g.numpy()
+        #rnp = r.numpy()
+        #np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
+        #np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
