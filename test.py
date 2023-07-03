@@ -420,7 +420,7 @@ batch_size=10#10个一组训练
 
 
 # 训练TeacherStudent模型
-num_epochs = 5
+num_epochs = 10
 for epoch in range(num_epochs):
     sampler = RandomSampler(dataset, num_samples=num_samples, replacement=True)
     dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
@@ -503,6 +503,9 @@ student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_
 # 在测试阶段只有学生模型的自编码器工作
 test_data_length=10
 #student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim,pic_w, pic_h).to(device)
+
+
+SAVE_PATH = "./data/output/photo/test/"
 with torch.no_grad():
     sampler = RandomSampler(dataset, num_samples=test_data_length, replacement=True)
     dataloader = DataLoader(dataset, batch_size=test_data_length, sampler=sampler)
@@ -525,3 +528,28 @@ with torch.no_grad():
         #rnp = r.numpy()
         #np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
         #np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
+
+        #保存图像
+        # 定义转换
+        to_pil_image = transforms.ToPILImage()
+
+        # 选择前10张图像
+        CSI_images = r[:test_data_length]
+        Video_images = g[:test_data_length]
+
+        # 遍历每张图像
+        for i, image in enumerate(CSI_images):
+            # 将张量转换为PIL图像
+            pil_image = to_pil_image(image)
+            # 构造文件名
+            filename = os.path.join(SAVE_PATH, f'CSI_output_{i}.png')
+            # 保存图像
+            pil_image.save(filename)
+
+        for i, image in enumerate(Video_images):
+            # 将张量转换为PIL图像
+            pil_image = to_pil_image(image)
+            # 构造文件名
+            filename = os.path.join(SAVE_PATH, f'Video_output_{i}.png')
+            # 保存图像
+            pil_image.save(filename)
