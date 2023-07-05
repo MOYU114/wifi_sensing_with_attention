@@ -257,7 +257,7 @@ class TeacherStudentModel(nn.Module):
         v = self.student_encoder_es(a)
         v_atti = self.selayer(v)
         # v_atti = v
-        s = self.student_decoder_ds(v_atti)
+        s = self.teacher_decoder_dv(v_atti)
 
         return z, y, v, s
 
@@ -276,6 +276,20 @@ class StudentModel(nn.Module):
         s = self.student_decoder_ds(v_atti)
         return s
 
+# 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
+def reshape_and_average(x):
+    num_rows = x.shape[0]
+    averaged_data = np.zeros((num_rows, 50))
+    for i in range(num_rows):
+        row_data = x.iloc[i].to_numpy()
+        reshaped_data = row_data.reshape(-1, 50)
+        reshaped_data = pd.DataFrame(reshaped_data).replace({None: np.nan}).values
+        reshaped_data = pd.DataFrame(reshaped_data).dropna().values
+        reshaped_data = np.asarray(reshaped_data, dtype=np.float64)
+        averaged_data[i] = np.nanmean(reshaped_data, axis=0)  # Compute column-wise average
+    averaged_df = pd.DataFrame(averaged_data, columns=None)
+    return averaged_df
+
 
 # Training configuration
 learning_rate = 0.01
@@ -290,8 +304,8 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 300
 dv_output_dim = 28
-CSI_PATH = "./data/CSI_train_legwave_25.csv"
-Video_PATH = "./data/points_train_legwave.csv"
+CSI_PATH = "./data/CSI_in_wave2.csv"
+Video_PATH = "./data/points_wavein2.csv"
 CSI_test = "./data/CSI_test_legwave_25.csv"
 Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -323,7 +337,7 @@ csi_test = pd.read_csv(CSI_test, header=None)
 # print(csi_test.shape)
 
 video_test = pd.read_csv(Video_test, header=None)
-print(aa.shape)
+# print(aa.shape)
 
 
 def fillna_with_previous_values(s):
@@ -341,8 +355,8 @@ def fillna_with_previous_values(s):
     return s
 
 
-aa = aa.apply(fillna_with_previous_values, axis=1)
-csi_test = csi_test.apply(fillna_with_previous_values, axis=1)
+# aa = aa.apply(fillna_with_previous_values, axis=1)
+# csi_test = csi_test.apply(fillna_with_previous_values, axis=1)
 
 # array_length = 50
 # result_array = np.zeros(array_length, dtype=int)
@@ -353,22 +367,22 @@ csi_test = csi_test.apply(fillna_with_previous_values, axis=1)
 #     else:
 #         result_array[i] = 3 * (i // 2) + 1
 
+bb = reshape_and_average(aa)
 Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为关键点坐标，按照xi，yi排序
-# Video_train = Video_train[:,result_array]
-CSI_train = aa.values.astype('float32')
+CSI_train = bb.values.astype('float32')
 
-csi_test = csi_test.values.astype('float32')
-video_test = video_test.values.astype('float32')
+# csi_test = csi_test.values.astype('float32')
+# video_test = video_test.values.astype('float32')
 
 CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
 Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
 Video_train = Video_train.reshape(len(Video_train), -1)
 
-csi_test = csi_test / np.max(csi_test)
-video_test = video_test.reshape(len(video_test), 14, 2)
-video_test = video_test / [1280, 720]
-video_test = video_test.reshape(len(video_test), -1)
+# csi_test = csi_test / np.max(csi_test)
+# video_test = video_test.reshape(len(video_test), 14, 2)
+# video_test = video_test / [1280, 720]
+# video_test = video_test.reshape(len(video_test), -1)
 
 # data = DataLoader(data, batch_size=500, shuffle=True)
 
@@ -382,27 +396,26 @@ data = np.hstack((Video_train, CSI_train))  # merge(V,S)
 data_length = len(data)
 train_data_length = int(data_length * 0.9)
 test_data_length = int(data_length - train_data_length)
-batch_size = 200
+batch_size = 300
 np.random.shuffle(data)  # 打乱data顺序，体现随机
 
 f_train = data[0:train_data_length, 0:28]  # 只取了前data_length*0.9行数据
 # f = torch.from_numpy(data[0:100,0:50])
 # f = f.view(100,50,1,1,1)
-a_train = data[0:train_data_length, 28:428]
+a_train = data[0:train_data_length, 28:78]
 # a = torch.from_numpy(data[0:100,50:800])
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
-batch_size = 200  # 如果调整训练集测试集大小，大小记得调整数值
 
 # 剩余作为测试
-# g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
-# b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()
-# b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
+b = torch.from_numpy(data[train_data_length:data_length,28:78]).double()
+b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
 
-random_index = np.random.choice(video_test.shape[0], size=4000, replace=False)
-g = torch.from_numpy(video_test[random_index, :]).double()
-b = torch.from_numpy(csi_test[random_index, :]).double()
-b = b.view(4000, int(len(csi_test[0]) / 10), 10)
+# random_index = np.random.choice(video_test.shape[0], size=4000, replace=False)
+# g = torch.from_numpy(video_test[random_index, :]).double()
+# b = torch.from_numpy(csi_test[random_index, :]).double()
+# b = b.view(4000, int(len(csi_test[0]) / 10), 10)
 
 # 记录损失值
 # loss_values = []
@@ -416,6 +429,9 @@ for epoch in range(num_epochs):
     a = torch.from_numpy(a_train[random_indices, :]).double()
     f = f.view(batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
     a = a.view(batch_size, int(len(a_train[0]) / 10), 10)
+
+    optimizer.zero_grad()
+
     if (torch.cuda.is_available()):
         f = f.cuda()
         a = a.cuda()
@@ -451,7 +467,7 @@ for epoch in range(num_epochs):
     # loss_values.append(total_loss) #记录损失值
 
     # 反向传播和优化
-    optimizer.zero_grad()
+    # optimizer.zero_grad()
     # teacher_loss.backward()
 
     total_loss.backward()
@@ -477,7 +493,7 @@ for epoch in range(num_epochs):
 # 参数传递
 student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
-student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
+student_model.student_decoder_ds.load_state_dict(model.teacher_decoder_dv.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
     b = b.to(device)
