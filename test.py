@@ -448,31 +448,20 @@ for epoch in range(num_epochs):
         # 计算教师模型的损失
         gc.collect()
         torch.cuda.empty_cache()
-        target = model.teacher_discriminator_c(f)
-        label = torch.ones_like(target)
-        real_loss = criterion2(target, label)
-        # print(real_loss)
-
-        target2 = 1 - model.teacher_discriminator_c(y)
-        label2 = torch.ones_like(target2)
-        # label2 = torch.zeros_like(target2)
-        fake_loss = criterion2(target2, label2)
-
-        # print(fake_loss)
-        teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
+        real_target = model.teacher_discriminator_c(f)
+        fake_target = model.teacher_discriminator_c(y)
+        teacher_loss = criterion2(real_target, fake_target) + criterion1(y, f)
+        # teacher_loss.backward()
+        # optimizer.step()
 
         # 计算学生模型的损失
         student_loss = 0.5 * criterion1(v, z) + criterion1(s, y)
 
-        # 计算总体损失
         total_loss = teacher_loss + student_loss
-        # loss_values.append(total_loss) #记录损失值
-
-        # 反向传播和优化
         optimizer.zero_grad()
-        # teacher_loss.backward()
-
+        # 计算梯度
         total_loss.backward()
+        # 更新模型参数
         optimizer.step()
         pbar.update(1)
         gc.collect()
