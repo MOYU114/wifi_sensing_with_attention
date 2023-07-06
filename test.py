@@ -361,11 +361,12 @@ pic_w, pic_h = image.size
 model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim,pic_w, pic_h).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
-criterion2 = nn.BCEWithLogitsLoss()  # 使用autocast
+criterion2 = nn.BCELoss()  # 使用autocast
 with open(CSI_PATH, "r") as csvfile:
     csvreader = csv.reader(csvfile)
     data1 = list(csvreader)  # 将读取的数据转换为列表
 aa = pd.DataFrame(data1)
+
 def fillna_with_previous_values(s):
     non_nan_values = s[s.notna()].values
     # Gets the location of the missing value

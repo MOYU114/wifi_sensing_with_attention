@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-training = True
+training = False
 #读取数据，并对数据进行处理，准备绘制图像
 CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH="./data/output/points_merged_output.csv"

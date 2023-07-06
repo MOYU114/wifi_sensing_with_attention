@@ -304,8 +304,8 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 300
 dv_output_dim = 28
-CSI_PATH = "./data/CSI_in_wave2.csv"
-Video_PATH = "./data/points_wavein2.csv"
+CSI_PATH = "./data/CSI_in_leg1.csv"
+Video_PATH = "./data/points_legin1.csv"
 CSI_test = "./data/CSI_test_legwave_25.csv"
 Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -315,15 +315,15 @@ model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
-criterion2 = nn.BCEWithLogitsLoss()  # 使用autocast
+criterion2 = nn.BCELoss()  # 使用autocast
 
 # 50条子载波
-# aa = pd.read_csv(CSI_PATH, header=None)
+aa = pd.read_csv(CSI_PATH, header=None)
 # 25条子载波否则会报错ParserError: Error tokenizing data. C error: Expected 75 fields in line 20, saw 100
-with open(CSI_PATH, "r") as csvfile:
-    csvreader = csv.reader(csvfile)
-    data1 = list(csvreader)  # 将读取的数据转换为列表
-aa = pd.DataFrame(data1)
+#with open(CSI_PATH, "r") as csvfile:
+#    csvreader = csv.reader(csvfile)
+#    data1 = list(csvreader)  # 将读取的数据转换为列表
+#aa = pd.DataFrame(data1)
 
 ff = pd.read_csv(Video_PATH, header=None)
 
@@ -396,7 +396,7 @@ data = np.hstack((Video_train, CSI_train))  # merge(V,S)
 data_length = len(data)
 train_data_length = int(data_length * 0.9)
 test_data_length = int(data_length - train_data_length)
-batch_size = 300
+batch_size = 500
 np.random.shuffle(data)  # 打乱data顺序，体现随机
 
 f_train = data[0:train_data_length, 0:28]  # 只取了前data_length*0.9行数据
@@ -421,7 +421,7 @@ b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不
 # loss_values = []
 
 
-# 训练模型
+# 训练模型 1000 lr=0.0001 loss可达0.1左右
 num_epochs = 1000
 for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
@@ -446,6 +446,7 @@ for epoch in range(num_epochs):
             else:
                 raise exception
     # 计算教师模型的损失
+    '''
     target = model.teacher_discriminator_c(f)
     label = torch.ones_like(target)
     real_loss = criterion2(target, label)
@@ -455,27 +456,28 @@ for epoch in range(num_epochs):
     label2 = torch.ones_like(target2)
     # label2 = torch.zeros_like(target2)
     fake_loss = criterion2(target2, label2)
-
     # print(fake_loss)
     teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
+    '''
+    real_target=model.teacher_discriminator_c(f)
+    fake_target=model.teacher_discriminator_c(y)
+    teacher_loss = criterion2(real_target,fake_target)+criterion1(y, f)
+    #teacher_loss.backward()
+    #optimizer.step()
 
     # 计算学生模型的损失
-    student_loss = 0.5 * criterion1(v, z) + criterion1(s, y)
+    student_loss =0.5 *criterion1(v, z) + criterion1(s, y)
 
-    # 计算总体损失
-    total_loss = teacher_loss + student_loss
-    # loss_values.append(total_loss) #记录损失值
-
-    # 反向传播和优化
-    # optimizer.zero_grad()
-    # teacher_loss.backward()
-
+    total_loss = teacher_loss +  student_loss
+    optimizer.zero_grad()
+    # 计算梯度
     total_loss.backward()
+    # 更新模型参数
     optimizer.step()
 
     # 打印训练信息
     print(
-        f"TeacherStudentModel training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}")
+        f"training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}, Total Loss: {total_loss.item():.4f}")
 
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 
@@ -505,9 +507,9 @@ with torch.no_grad():
     # df = pd.DataFrame(r.numpy())
     # df.to_excel("result.xls", index=False)
     print("loss:", loss)
-    # g = g.cpu()
-    # r = r.cpu()
-    # gnp = g.numpy()
-    # rnp = r.numpy()
-    # np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
-    # np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
+    g = g.cpu()
+    r = r.cpu()
+    gnp = g.numpy()
+    rnp = r.numpy()
+    np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
+    np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')

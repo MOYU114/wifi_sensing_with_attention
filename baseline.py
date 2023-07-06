@@ -198,8 +198,8 @@ class TeacherStudentModel(nn.Module):
         # test = self.teacher_discriminator_c(f)
 
         v = self.student_encoder_es(a)
-        v_trans = self.Transformer(z,v)
-        #v_trans = v
+        #v_trans = self.Transformer(z,v)
+        v_trans = v
         s = self.student_decoder_ds(v_trans)
 
         return z, y, v_trans, s
@@ -254,7 +254,7 @@ model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
-criterion2 = nn.BCEWithLogitsLoss() #使用autocast
+criterion2 = nn.BCELoss() #使用autocast
 
 
 
@@ -326,7 +326,7 @@ b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不
 
 # 训练模型
 
-num_epochs = 30
+num_epochs = 1000
 for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
     f = torch.from_numpy(f_train[random_indices,:]).double()
@@ -347,18 +347,9 @@ for epoch in range(num_epochs):
             else:
                 raise exception
     # 计算教师模型的损失
-    target = model.teacher_discriminator_c(f)
-    label = torch.ones_like(target)
-    real_loss = criterion2(target, label)
-    # print(real_loss)
-    
-    target2 = 1-model.teacher_discriminator_c(y)
-    label2 = torch.ones_like(target2)
-    # label2 = torch.zeros_like(target2)
-    fake_loss = criterion2(target2, label2)
-
-    # print(fake_loss)
-    teacher_loss = criterion1(y, f) + 0.5*(real_loss + fake_loss)
+    real_target = model.teacher_discriminator_c(f)
+    fake_target = model.teacher_discriminator_c(y)
+    teacher_loss = criterion2(real_target, fake_target) + criterion1(y, f)
 
     # 计算学生模型的损失
     student_loss = 0.5*criterion1(v, z) + criterion1(s, y)
