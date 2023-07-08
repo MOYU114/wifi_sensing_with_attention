@@ -261,29 +261,6 @@ class SELayer(nn.Module):
         y = self.avg_pool(x).view(b, c) #对应Squeeze操作
         y = self.fc(y).view(b, c, 1, 1) #对应Excitation操作
         return x * y.expand_as(x)
-class TeacherModel_G(nn.Module):
-    def __init__(self, ev_input_dim, ev_latent_dim, dv_output_dim):
-        super(TeacherModel_G, self).__init__()
-        self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
-        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
-
-        self.CBAM = CBAM(ev_latent_dim).double()
-        self.Transformer = Transformer(ev_latent_dim).double()
-        self.selayer = SELayer(ev_latent_dim).double()
-    def forward(self, f):
-        z = self.teacher_encoder_ev(f)
-        z_atti = self.selayer(z)
-        y = self.teacher_decoder_dv(z_atti)
-
-        return z, y
-class TeacherModel_D(nn.Module):
-    def __init__(self, ev_input_dim):
-        super(TeacherModel_D, self).__init__()
-        self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
-    def forward(self, input):
-        output = self.teacher_discriminator_c(input)
-        return output
-
 
 class TeacherStudentModel(nn.Module):
     def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim,pic_w,pic_h):
@@ -342,8 +319,8 @@ es_input_dim = 10
 es_hidden_dim = 300
 dv_output_dim = 3
 
-CSI_PATH = "./data/CSI_wave5.csv"
-Video_PATH = "./data/image_wave5/"
+CSI_PATH = "./data/CSI_wave1_3520.csv"
+Video_PATH = "./data/image_wave1/"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
 
@@ -362,10 +339,8 @@ model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCELoss()  # 使用autocast
-with open(CSI_PATH, "r") as csvfile:
-    csvreader = csv.reader(csvfile)
-    data1 = list(csvreader)  # 将读取的数据转换为列表
-aa = pd.DataFrame(data1)
+
+aa = pd.read_csv(CSI_PATH, header=None)
 
 def fillna_with_previous_values(s):
     non_nan_values = s[s.notna()].values
@@ -380,8 +355,19 @@ def fillna_with_previous_values(s):
     # Fill missing value
     s.iloc[nan_indices] = fill_values
     return s
-
-aa = aa.apply(fillna_with_previous_values, axis=1)
+def reshape_and_average(x):
+    num_rows = x.shape[0]
+    averaged_data = np.zeros((num_rows, 50))
+    for i in range(num_rows):
+        row_data = x.iloc[i].to_numpy()
+        reshaped_data = row_data.reshape(-1, 50)
+        reshaped_data = pd.DataFrame(reshaped_data).replace({None: np.nan}).values
+        reshaped_data = pd.DataFrame(reshaped_data).dropna().values
+        reshaped_data = np.asarray(reshaped_data, dtype=np.float64)
+        averaged_data[i] = np.nanmean(reshaped_data, axis=0)  # Compute column-wise average
+    averaged_df = pd.DataFrame(averaged_data, columns=None)
+    return averaged_df
+aa = reshape_and_average(aa)
 
 class CustomDataset(Dataset):
     def __init__(self, image_folder_path, input_vectors, pics_num):
@@ -421,7 +407,7 @@ batch_size=10#10个一组训练
 
 
 # 训练TeacherStudent模型
-num_epochs = 10
+num_epochs = 100
 for epoch in range(num_epochs):
     sampler = RandomSampler(dataset, num_samples=num_samples, replacement=True)
     dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
@@ -450,12 +436,12 @@ for epoch in range(num_epochs):
         torch.cuda.empty_cache()
         real_target = model.teacher_discriminator_c(f)
         fake_target = model.teacher_discriminator_c(y)
-        teacher_loss = criterion2(real_target, fake_target) + criterion1(y, f)
+        teacher_loss = criterion2(real_target, fake_target) + criterion1(y, f)+ 1e-6
         # teacher_loss.backward()
         # optimizer.step()
 
         # 计算学生模型的损失
-        student_loss = 0.5 * criterion1(v, z) + criterion1(s, y)
+        student_loss = 0.5 * criterion1(v, z) + criterion1(s, y)+ 1e-6
 
         total_loss = teacher_loss + student_loss
         optimizer.zero_grad()

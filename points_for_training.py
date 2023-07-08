@@ -250,14 +250,14 @@ class TeacherStudentModel(nn.Module):
 
     def forward(self, f, a):
         z = self.teacher_encoder_ev(f)
-        z_atti = self.selayer(z)
-        y = self.teacher_decoder_dv(z_atti)
+        #z_atti = self.CBAM(z)
+        y = self.teacher_decoder_dv(z)
         # test = self.teacher_discriminator_c(f)
 
         v = self.student_encoder_es(a)
-        v_atti = self.selayer(v)
+        #v_atti = self.CBAM(v)
         # v_atti = v
-        s = self.teacher_decoder_dv(v_atti)
+        s = self.teacher_decoder_dv(v)
 
         return z, y, v, s
 
@@ -275,6 +275,44 @@ class StudentModel(nn.Module):
         v_atti = v
         s = self.student_decoder_ds(v_atti)
         return s
+class TeacherModel_G(nn.Module):
+    def __init__(self, ev_input_dim, ev_latent_dim, dv_output_dim):
+        super(TeacherModel_G, self).__init__()
+        self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
+        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
+
+        self.CBAM = CBAM(ev_latent_dim).double()
+        self.Transformer = Transformer(ev_latent_dim).double()
+        self.selayer = SELayer(ev_latent_dim).double()
+    def forward(self, f):
+        z = self.teacher_encoder_ev(f)
+        z_atti = self.selayer(z)
+        y = self.teacher_decoder_dv(z_atti)
+
+        return z, y
+class TeacherModel_D(nn.Module):
+    def __init__(self, ev_input_dim):
+        super(TeacherModel_D, self).__init__()
+        self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
+    def forward(self, input):
+        output = self.teacher_discriminator_c(input)
+        return output
+
+class TeacherModel(nn.Module):
+    def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim):
+        super(TeacherModel, self).__init__()
+        self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
+        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
+        self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
+        self.CBAM = CBAM(ev_latent_dim).double()
+        self.Transformer = Transformer(ev_latent_dim).double()
+        self.selayer = SELayer(ev_latent_dim).double()
+
+    def forward(self, f):
+        z = self.teacher_encoder_ev(f)
+        z_atti = self.selayer(z)
+        y = self.teacher_decoder_dv(z_atti)
+        return z, y
 
 # 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
 def reshape_and_average(x):
@@ -419,9 +457,57 @@ b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不
 
 # 记录损失值
 # loss_values = []
+'''
+#训练Teacher模型
+LR_G = 0.01
+LR_D = 0.01
+teacher_model_G=TeacherModel_G(ev_input_dim, ev_latent_dim, dv_output_dim).to(device)
+teacher_model_D=TeacherModel_D(ev_input_dim).to(device)
+optimizer_G = torch.optim.Adam(teacher_model_G.parameters(), lr=LR_G)
+optimizer_D = torch.optim.Adam(teacher_model_D.parameters(), lr=LR_D)
 
+Teacher_num_epochs = 1000
+for epoch in range(Teacher_num_epochs):
+    random_indices = np.random.choice(original_length, size=batch_size, replace=False)
+    f = torch.from_numpy(f_train[random_indices, :]).double()
+    f = f.view(batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
+    if (torch.cuda.is_available()):
+        f = f.cuda()
+    try:
+        with autocast():
+            z, y = teacher_model_G(f)
+    except RuntimeError as exception:
+        if "out of memory" in str(exception):
+            print('WARNING: out of memory')
+            if hasattr(torch.cuda, 'empty_cache'):
+                torch.cuda.empty_cache()
+            else:
+                raise exception
+    # 进行对抗学习
+    real_target = teacher_model_D.teacher_discriminator_c(f)
+    fake_target = teacher_model_D.teacher_discriminator_c(y)
+    fake_loss=criterion2(real_target, fake_target)+ 1e-6 #防止log0导致结果为-inf
+    teacher_loss = fake_loss + criterion1(y, f)
 
-# 训练模型 1000 lr=0.0001 loss可达0.1左右
+    optimizer_D.zero_grad()
+    teacher_loss.backward(retain_graph=True)
+    optimizer_D.step()
+
+    optimizer_G.zero_grad()
+    fake_loss.backward()
+    optimizer_G.step()
+    # 打印训练信息
+    print(
+        f"TeacherModel training:Epoch [{epoch + 1}/{Teacher_num_epochs}], Teacher_G Loss: {fake_loss.item():.4f},Teacher_D Loss: {teacher_loss.item():.4f}")
+
+#model.teacher_encoder_ev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
+#model.teacher_decoder_dv.load_state_dict(teacher_model_G.teacher_decoder_dv.state_dict())
+#model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discriminator_c.state_dict())
+'''
+# 训练模型 1000 lr=0.01
+# selayer 800 0.0023
+# CBAM 1000 0.0022
+# 非注意力机制训练的模型结果不稳定，使用注意力机制的模型训练结果变化不大，考虑训练样本的多元
 num_epochs = 1000
 for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
@@ -461,12 +547,12 @@ for epoch in range(num_epochs):
     '''
     real_target=model.teacher_discriminator_c(f)
     fake_target=model.teacher_discriminator_c(y)
-    teacher_loss = criterion2(real_target,fake_target)+criterion1(y, f)
+    teacher_loss = criterion2(real_target,fake_target)+criterion1(y, f)+ 1e-6 #防止log0导致结果为-inf
     #teacher_loss.backward()
     #optimizer.step()
 
     # 计算学生模型的损失
-    student_loss =0.5 *criterion1(v, z) + criterion1(s, y)
+    student_loss =0.5 *criterion1(v, z) + criterion1(s, y)+ 1e-6
 
     total_loss = teacher_loss +  student_loss
     optimizer.zero_grad()
