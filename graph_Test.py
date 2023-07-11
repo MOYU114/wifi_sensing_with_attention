@@ -46,13 +46,13 @@ def draw_single_pic(i,arrary,pic_name):
     plt.plot([x[1], x[11]], [y[1], y[11]])
     plt.plot([x[11], x[12]], [y[11], y[12]])
     plt.plot([x[12], x[13]], [y[12], y[13]])
-    #plt.show()
-    plt.savefig(SAVE_PATH+pic_name)
-    plt.clf()
+    plt.show()
+    # plt.savefig(SAVE_PATH+pic_name)
+    # plt.clf()
 pics_num = 50
 
 for i in range(pics_num):
-    num=i+1
+    num=i+100
     draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
     draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
     #draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
