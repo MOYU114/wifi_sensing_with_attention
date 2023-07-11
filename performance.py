@@ -1,0 +1,51 @@
+import pandas as pd
+import numpy as np
+import math
+
+
+CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
+Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
+
+CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_PATH, header=None)
+Video_OUTPUT = pd.read_csv(Video_OUTPUT_PATH, header=None)
+
+CSI_OUTPUT=CSI_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
+Video_OUTPUT=Video_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
+CSI_OUTPUT = np.array(CSI_OUTPUT.tolist())
+Video_OUTPUT = np.array(Video_OUTPUT.tolist())
+def align_coordinates(coords1, coords2):
+    # 计算两个坐标数组第二对坐标之间的差值
+    x_diff = coords2[1][0] - coords1[1][0]
+    y_diff = coords2[1][1] - coords1[1][1]
+    # 根据差值平移第一个坐标数组中的所有坐标
+    new_coords1 = [[x + x_diff, y + y_diff] for x, y in coords1]
+    return new_coords1
+def align_all_coordinates(coords_list1,coords_list2):
+    total_list_num=len(coords_list1)
+    for i in range(total_list_num):
+        #第一个坐标数组作为参考,改写第二组
+        coords_list2[i]=align_coordinates(coords_list2[i],coords_list1[i])
+    return coords_list2
+CSI_OUTPUT=align_all_coordinates(Video_OUTPUT,CSI_OUTPUT)
+
+print(CSI_OUTPUT)
+print(Video_OUTPUT)
+def euclidean_distance(x1, y1, x2, y2):
+    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+def PCS(CSI_OUTPUT,Video_OUTPUT,phi):
+    total_num = len(CSI_OUTPUT)
+    N = len(CSI_OUTPUT[0])
+    pcs_total=0
+    for i in range(total_num):
+        sum=0
+        for j in range(N):
+            sum+=euclidean_distance(CSI_OUTPUT[i][j][0],CSI_OUTPUT[i][j][1],Video_OUTPUT[i][j][0],Video_OUTPUT[i][j][1])<phi*0.001
+        pcs_total+=sum/N
+    pcs_avg=pcs_total/total_num
+    return pcs_avg
+
+#阈值应该根据具体情况设置
+print(f"PCS◦25={PCS(CSI_OUTPUT,Video_OUTPUT,25)}")
+print(f"PCS◦30={PCS(CSI_OUTPUT,Video_OUTPUT,30)}")
+print(f"PCS◦40={PCS(CSI_OUTPUT,Video_OUTPUT,40)}")
+print(f"PCS◦50={PCS(CSI_OUTPUT,Video_OUTPUT,50)}")
