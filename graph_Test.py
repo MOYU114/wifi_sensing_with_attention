@@ -5,6 +5,7 @@ training = False
 #读取数据，并对数据进行处理，准备绘制图像
 CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
+#Video_OUTPUT_PATH="./data/points_train.csv"
 CSI_OUTPUT_TRAINING_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_TRAINING_PATH="./data/output/points_merged_output_training.csv"
 if training:
@@ -49,9 +50,9 @@ def draw_single_pic(i,arrary,pic_name):
     #plt.show()
     plt.savefig(SAVE_PATH+pic_name)
     plt.clf()
-pics_num = 20
-
-for i in range(pics_num):
+pics_num = 100
+base=0
+for i in range(base,base+pics_num):
     num=i+1
     draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
     draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")

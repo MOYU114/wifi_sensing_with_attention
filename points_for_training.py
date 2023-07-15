@@ -6,7 +6,9 @@ Created on Wed May 31 10:43:47 2023
 """
 import math
 import csv
-from tqdm import tqdm
+import os
+
+from tqdm import tqdm,trange
 import torch, gc
 import torch.nn as nn
 import numpy as np
@@ -27,15 +29,18 @@ class EncoderEv(nn.Module):
     def __init__(self, input_dim):
         super(EncoderEv, self).__init__()
         self.gen = nn.Sequential(
-            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(input_dim, 8, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(8),
+            nn.LeakyReLU(),
+            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(16),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(32),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU()
+            nn.LeakyReLU()
         )
 
     def forward(self, x):
@@ -49,41 +54,51 @@ class DecoderDv(nn.Module):
         super(DecoderDv, self).__init__()
         self.deconv1 = nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU()
+        self.relu = nn.LeakyReLU()
         self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(32)
-        self.relu = nn.ReLU()
-        self.deconv3 = nn.ConvTranspose2d(32, output_dim, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(28)
-        self.relu = nn.ReLU()
-
+        self.relu = nn.LeakyReLU()
+        self.deconv3 = nn.ConvTranspose2d(32, 30, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(30)
+        self.relu = nn.LeakyReLU()
+        self.deconv4 = nn.ConvTranspose2d(30, output_dim, kernel_size=3, stride=1, padding=1)
+        self.bn4 = nn.BatchNorm2d(28)
+        self.relu = nn.LeakyReLU()
     def forward(self, x):
         x = self.relu(self.bn1(self.deconv1(x)))
         x = self.relu(self.bn2(self.deconv2(x)))
         x = self.relu(self.bn3(self.deconv3(x)))
+        x = self.relu(self.bn4(self.deconv4(x)))
         return x
 
 
 class DiscriminatorC(nn.Module):
     def __init__(self, input_dim):
         super(DiscriminatorC, self).__init__()
+        self.f0 = nn.Sequential(
+            nn.Conv2d(input_dim, 8, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(8),
+            nn.LeakyReLU()
+        )
         self.f1 = nn.Sequential(
-            nn.Conv2d(input_dim, 16, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(16),
-            nn.ReLU()
+            nn.LeakyReLU()
         )
         self.f2 = nn.Sequential(
             nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(32),
-            nn.ReLU()
+            nn.LeakyReLU()
         )
         self.out = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(64),
+            nn.LeakyReLU(),
             nn.Sigmoid()
         )
 
     def forward(self, x):
+        x = self.f0(x)
         x = self.f1(x)
         x = self.f2(x)
         x = self.out(x)
@@ -96,9 +111,10 @@ class EncoderEs(nn.Module):
         super(EncoderEs, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=1, batch_first=True)
         self.conv = nn.Conv2d(hidden_dim, latent_dim, kernel_size=3, stride=1, padding=1)
-
+        self.relu = nn.ReLU()
     def forward(self, x):
         _, (h, _) = self.lstm(x)
+        h=self.relu(h)
         h = h[-1]  # Get the hidden state of the last LSTM unit
         h = h.unsqueeze(2).unsqueeze(3)  # Add dimensions for 2D convolution
         v = self.conv(h)
@@ -222,7 +238,7 @@ class SELayer(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid()
         )
@@ -242,7 +258,8 @@ class TeacherStudentModel(nn.Module):
         self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
 
         self.student_encoder_es = EncoderEs(es_input_dim, es_hidden_dim, ev_latent_dim).double()
-        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double()
+        self.student_decoder_ds = self.teacher_decoder_dv
+        #self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double()
 
         self.CBAM = CBAM(ev_latent_dim).double()
         self.Transformer = Transformer(ev_latent_dim).double()
@@ -255,9 +272,9 @@ class TeacherStudentModel(nn.Module):
         # test = self.teacher_discriminator_c(f)
 
         v = self.student_encoder_es(a)
-        #v_atti = self.selayer(v)
+        v_atti = self.selayer(v)
         #v_atti = v
-        s = self.teacher_decoder_dv(v)
+        s = self.teacher_decoder_dv(v_atti)
 
         return z, y, v, s
 
@@ -278,19 +295,21 @@ class StudentModel(nn.Module):
 
 
 # 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
+
 def reshape_and_average(x):
     num_rows = x.shape[0]
     averaged_data = np.zeros((num_rows, 50))
-    for i in range(num_rows):
+    for i in trange(num_rows):
         row_data = x.iloc[i].to_numpy()
         reshaped_data = row_data.reshape(-1, 50)
         reshaped_data = pd.DataFrame(reshaped_data).replace({None: np.nan}).values
         reshaped_data = pd.DataFrame(reshaped_data).dropna().values
-        reshaped_data = np.asarray(reshaped_data, dtype=np.float64)
+        non_empty_rows = np.any(reshaped_data != '', axis=1)
+        filtered_arr = reshaped_data[non_empty_rows]
+        reshaped_data = np.asarray(filtered_arr, dtype=np.float64)
         averaged_data[i] = np.nanmean(reshaped_data, axis=0)  # Compute column-wise average
     averaged_df = pd.DataFrame(averaged_data, columns=None)
     return averaged_df
-
 
 # Training configuration
 learning_rate = 0.01
@@ -305,8 +324,8 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 300
 dv_output_dim = 28
-CSI_PATH = "./data/CSI_wave8.csv"
-Video_PATH = "./data/points_wave8.csv"
+CSI_PATH = "./data/CSI_train_new.csv"
+Video_PATH = "./data/points_train.csv"
 CSI_test = "./data/CSI_test_legwave_25.csv"
 Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -316,17 +335,17 @@ model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
-criterion2 = nn.BCELoss()  # 使用autocast
+criterion2 = nn.BCELoss()
 
 # 25条子载波否则会报错ParserError: Error tokenizing data. C error: Expected 75 fields in line 20, saw 100
-# aa = pd.read_csv(CSI_PATH, header=None)
-with open(CSI_PATH, "r") as csvfile:
+#aa = pd.read_csv(CSI_PATH, header=None,low_memory=False,encoding="utf-8-sig")
+with open(CSI_PATH, "r", encoding='utf-8-sig') as csvfile:
     csvreader = csv.reader(csvfile)
     data1 = list(csvreader)  # 将读取的数据转换为列表
 aa = pd.DataFrame(data1)
 
 ff = pd.read_csv(Video_PATH, header=None)
-
+print("data has loaded.")
 # 50条子载波
 # csi_test = pd.read_csv(CSI_test, header=None)
 # 25条子载波
@@ -366,8 +385,14 @@ def fillna_with_previous_values(s):
 #         result_array[i] = 3 * (i // 2)
 #     else:
 #         result_array[i] = 3 * (i // 2) + 1
-
-bb = reshape_and_average(aa)
+if(os.path.exists('./data/CSI_avg.csv')!=True):
+    bb = reshape_and_average(aa)
+    np.savetxt('./data/CSI_avg.csv', bb, delimiter=',')
+else:
+    with open('./data/CSI_avg.csv', "r", encoding='utf-8-sig') as csvfile:
+        csvreader = csv.reader(csvfile)
+        data1 = list(csvreader)  # 将读取的数据转换为列表
+    bb = pd.DataFrame(data1)
 Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为关键点坐标，按照xi，yi排序
 CSI_train = bb.values.astype('float32')
 
@@ -396,7 +421,7 @@ data = np.hstack((Video_train, CSI_train))  # merge(V,S)
 data_length = len(data)
 train_data_length = int(data_length * 0.9)
 test_data_length = int(data_length - train_data_length)
-batch_size = 100
+batch_size = 1000
 np.random.shuffle(data)  # 打乱data顺序，体现随机
 
 # 视频帧是20帧每秒，每秒取一帧数据进行训练，缓解站立数据过多对训练数据造成的不平衡
@@ -426,7 +451,7 @@ b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需�
 # 4. 教师模型和学生模型中都使用selayer似乎效果不错。
 # 5. 在变化不大的素材里，过多的使用注意力机制会导致输出结果趋于一个取平均的状态
 '''
-num_epochs = 1500
+num_epochs =1000
 
 for epoch in range(num_epochs):
 
@@ -452,7 +477,7 @@ for epoch in range(num_epochs):
             else:
                 raise exception
     # 计算教师模型的损失
-    # '''
+    '''
     target = model.teacher_discriminator_c(f)
     label = torch.ones_like(target)
     real_loss = criterion2(target, label)
@@ -464,17 +489,24 @@ for epoch in range(num_epochs):
     fake_loss = criterion2(target2, label2)
     # print(fake_loss)
     teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
-    # '''
-    #real_target=model.teacher_discriminator_c(f)
-    #fake_target=model.teacher_discriminator_c(y)
-    #teacher_loss = criterion2(real_target,fake_target)+criterion1(y, f)+ 1e-6 #防止log0导致结果为-inf
+    '''
+    #'''
+
+    eps = 1e-8#平滑值，防止出现log0
+    real_prob = model.teacher_discriminator_c(f)
+    fake_prob = model.teacher_discriminator_c(y)
+    d_loss = -torch.mean(torch.log(real_prob + eps) + torch.log(1 - fake_prob + eps))
+    g_loss = -torch.mean(torch.log(fake_prob + eps))
+    Ladv = d_loss + g_loss
+    teacher_loss = 0.5*Ladv+criterion1(f,y)
+
     #teacher_loss.backward()
     #optimizer.step()
-
+    #'''
     # 计算学生模型的损失
-    student_loss =0.5 *criterion1(v, z) + criterion1(s, y)+ 1e-6
+    student_loss =0.5 *criterion1(v, z) +criterion1(s, y)
 
-    total_loss = teacher_loss +  student_loss
+    total_loss = teacher_loss + student_loss
     # optimizer.zero_grad()
     # 计算梯度
     total_loss.backward()
@@ -488,20 +520,23 @@ for epoch in range(num_epochs):
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 
 # 查看训练集效果
-# y = y.cpu()
-# s = s.cpu()
-# ynp = y.detach().numpy()
-# snp = s.detach().numpy()
-# ynp=ynp.squeeze()
-# snp=snp.squeeze()
-# np.savetxt("./data/output/CSI_merged_output_training.csv", ynp, delimiter=',')
-# np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=',')
-
+f = f.cpu()
+y = y.cpu()
+s = s.cpu()
+ynp = y.detach().numpy()
+snp = s.detach().numpy()
+fnp = f.detach().numpy()
+ynp=ynp.squeeze()
+snp=snp.squeeze()
+fnp=fnp.squeeze()
+np.savetxt("./data/output/CSI_merged_output_training.csv", ynp, delimiter=',')
+np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=',')
+np.savetxt("./data/output/real_output_training.csv", fnp, delimiter=',')
 
 # 参数传递
 student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
-student_model.student_decoder_ds.load_state_dict(model.teacher_decoder_dv.state_dict())
+student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
     b = b.to(device)
