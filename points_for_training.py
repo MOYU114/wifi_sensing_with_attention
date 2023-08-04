@@ -13,6 +13,7 @@ import torch, gc
 import torch.nn as nn
 import numpy as np
 import pandas as pd
+import torch.nn.init as init
 from torch.cuda.amp import autocast
 import matplotlib.pyplot as plt
 
@@ -91,9 +92,9 @@ class DiscriminatorC(nn.Module):
             nn.LeakyReLU()
         )
         self.out = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(),
+            nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=1),
+            # nn.BatchNorm2d(64),
+            # nn.LeakyReLU(),
             nn.Sigmoid()
         )
 
@@ -273,7 +274,7 @@ class TeacherStudentModel(nn.Module):
 
         v = self.student_encoder_es(a)
         v_atti = self.selayer(v)
-        #v_atti = v
+        # v_atti = v
         s = self.teacher_decoder_dv(v_atti)
 
         return z, y, v, s
@@ -288,14 +289,51 @@ class StudentModel(nn.Module):
 
     def forward(self, x):
         v = self.student_encoder_es(x)
-        #v_atti=self.selayer(v)
-        #v_atti = v
-        s = self.student_decoder_ds(v)
+        # v_atti=self.selayer(v)
+        v_atti = v
+        s = self.student_decoder_ds(v_atti)
         return s
 
+class TeacherModel_G(nn.Module):
+    def __init__(self, ev_input_dim, ev_latent_dim, dv_output_dim):
+        super(TeacherModel_G, self).__init__()
+        self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
+        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
+
+        self.CBAM = CBAM(ev_latent_dim).double()
+        self.Transformer = Transformer(ev_latent_dim).double()
+        self.selayer = SELayer(ev_latent_dim).double()
+    def forward(self, f):
+        z = self.teacher_encoder_ev(f)
+        # z_atti = self.selayer(z)
+        y = self.teacher_decoder_dv(z)
+
+        return y
+class TeacherModel_D(nn.Module):
+    def __init__(self, ev_input_dim):
+        super(TeacherModel_D, self).__init__()
+        self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
+    def forward(self, input):
+        output = self.teacher_discriminator_c(input)
+        return output
+
+class TeacherModel(nn.Module):
+    def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim):
+        super(TeacherModel, self).__init__()
+        self.teacher_encoder_ev = EncoderEv(ev_input_dim).double()
+        self.teacher_decoder_dv = DecoderDv(ev_latent_dim, dv_output_dim).double()
+        self.teacher_discriminator_c = DiscriminatorC(ev_input_dim).double()
+        self.CBAM = CBAM(ev_latent_dim).double()
+        self.Transformer = Transformer(ev_latent_dim).double()
+        self.selayer = SELayer(ev_latent_dim).double()
+
+    def forward(self, f):
+        z = self.teacher_encoder_ev(f)
+        z_atti = self.selayer(z)
+        y = self.teacher_decoder_dv(z_atti)
+        return z, y
 
 # 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
-
 def reshape_and_average(x):
     num_rows = x.shape[0]
     averaged_data = np.zeros((num_rows, 50))
@@ -311,7 +349,159 @@ def reshape_and_average(x):
     averaged_df = pd.DataFrame(averaged_data, columns=None)
     return averaged_df
 
+def fillna_with_previous_values(s):
+    non_nan_values = s[s.notna()].values
+    nan_indices = s.index[s.isna()]
+    n_fill = len(nan_indices)
+    n_repeat = int(np.ceil(n_fill / len(non_nan_values)))
+    fill_values = np.tile(non_nan_values, n_repeat)[:n_fill]
+    s.iloc[nan_indices] = fill_values
+    return s
+
+ev_input_dim = 28
+ev_latent_dim = 64
+es_input_dim = 10
+es_hidden_dim = 300
+dv_output_dim = 28
+
+CSI_PATH = "./data/CSI_in.csv"
+Video_PATH = "./data/points_in.csv"
+CSI_test = "./data/CSI_test_legwave_25.csv"
+Video_test = "./data/points_test_legwave.csv"
+CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
+Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
+
+#aa = pd.read_csv(CSI_PATH, header=None,low_memory=False,encoding="utf-8-sig")
+with open(CSI_PATH, "r", encoding='utf-8-sig') as csvfile:
+    csvreader = csv.reader(csvfile)
+    data1 = list(csvreader)
+aa = pd.DataFrame(data1)                             #读取CSI数据到aa
+ff = pd.read_csv(Video_PATH, header=None)            #读取骨架关节点数据到ff
+print("data has loaded.")
+
+bb = reshape_and_average(aa)                        #把多个CSI数据包平均为一个数据包，使一帧对应一个CSI数据包
+Video_train = ff.values.astype('float32')
+CSI_train = bb.values.astype('float32')
+
+CSI_train = CSI_train / np.max(CSI_train)
+Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
+Video_train = Video_train / [1280, 720]            #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
+Video_train = Video_train.reshape(len(Video_train), -1)
+
+data = np.hstack((Video_train, CSI_train))
+data_length = len(data)
+train_data_length = int(data_length * 0.9)
+test_data_length = int(data_length - train_data_length)
+
+f_train = data[19::20, 0:28]
+a_train = data[19::20, 28:78]
+# a = torch.from_numpy(data[0:100,50:800])
+# f = torch.from_numpy(data[0:100,0:50])
+# f = f.view(100,50,1,1,1)
+# a = a.view(100,50,10)
+original_length = f_train.shape[0]
+
+# 剩余作为测试
+g = torch.from_numpy(data[11::20,0:28]).double()
+b = torch.from_numpy(data[11::20,28:78]).double()
+b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+
+
+# 记录损失值
+# loss_values = []
+# '''
+#训练Teacher模型
+LR_G = 0.001
+LR_D = 0.001
+teacher_model_G=TeacherModel_G(ev_input_dim, ev_latent_dim, dv_output_dim).to(device)
+teacher_model_D=TeacherModel_D(ev_input_dim).to(device)
+criterion = nn.BCELoss()
+optimizer_G = torch.optim.Adam(teacher_model_G.parameters(), lr=LR_G)
+optimizer_D = torch.optim.Adam(teacher_model_D.parameters(), lr=LR_D)
+
+# # 创建生成器和鉴别器实例
+# generator = Generator(input_dim, output_dim)
+# discriminator = Discriminator(output_dim)
+
+# 随机初始化生成器和鉴别器的参数
+def weights_init(m):
+    if isinstance(m, nn.Linear):
+        init.xavier_uniform_(m.weight.data)  # 使用Xavier均匀分布初始化权重
+        if m.bias is not None:
+            init.constant_(m.bias.data, 0.1)  # 初始化偏置为0.1
+
+teacher_model_G.apply(weights_init)
+teacher_model_D.apply(weights_init)
+
+# # 输出生成器和鉴别器的模型结构和参数
+# print("Generator:")
+# print(generator)
+# print("Discriminator:")
+# print(discriminator)
+
+torch.autograd.set_detect_anomaly(True)
+Teacher_num_epochs = 250
+teacher_batch_size = 512
+for epoch in range(Teacher_num_epochs):
+    random_indices = np.random.choice(original_length, size=teacher_batch_size, replace=False)
+    f = torch.from_numpy(f_train[random_indices, :]).double()
+    f = f.view(teacher_batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
+    y = teacher_model_G(f)
+    # if (torch.cuda.is_available()):
+    #     f = f.cuda()
+    # try:
+    #     with autocast():
+    #         z, y = teacher_model_G(f)
+    # except RuntimeError as exception:
+    #     if "out of memory" in str(exception):
+    #         print('WARNING: out of memory')
+    #         if hasattr(torch.cuda, 'empty_cache'):
+    #             torch.cuda.empty_cache()
+    #         else:
+    #             raise exception
+    # 进行对抗学习
+    optimizer_D.zero_grad()
+    
+    # real_labels = torch.ones(teacher_batch_size, 1).double()
+    # fake_labels = torch.zeros(teacher_batch_size, 1).double()
+    
+    real_target = teacher_model_D.teacher_discriminator_c(f)
+    real_target = real_target.view(teacher_batch_size,1)
+    # real_loss = criterion(real_target, real_labels)
+    
+    fake_target = teacher_model_D.teacher_discriminator_c(y)
+    fake_target = fake_target.view(teacher_batch_size,1)
+    # fake_loss=criterion(fake_target, fake_labels) #+ 1e-6 #防止log0导致结果为-inf
+    
+    eps = 1e-8#平滑值，防止出现log0
+    teacher_loss = torch.mean(torch.abs(real_target.mean(0) - fake_target.mean(0)))
+    # teacher_loss = -torch.mean(torch.log(real_target + eps) + torch.log(1 - fake_target + eps))
+    
+    # teacher_loss = - real_loss + fake_loss
+    
+    #训练鉴别器
+    teacher_loss.backward(retain_graph=True)
+    optimizer_D.step()
+    
+    #训练生成器
+    optimizer_G.zero_grad()
+    real_output = teacher_model_D.teacher_discriminator_c(f)
+    real_output = real_target.view(teacher_batch_size,1)
+    fake_output = teacher_model_D.teacher_discriminator_c(y)
+    fake_output = fake_output.view(teacher_batch_size,1)
+    # gen_loss = torch.mean(torch.abs(real_output.mean(0) - fake_output.mean(0)))
+    gen_loss = -torch.mean(torch.log(fake_output + eps))
+    # gen_loss = criterion(fake_output, real_labels)
+    
+    gen_loss.backward()
+    optimizer_G.step()
+    # 打印训练信息
+    print(
+        f"TeacherModel training:Epoch [{epoch + 1}/{Teacher_num_epochs}], Teacher_G Loss: {gen_loss.item():.4f},Teacher_D Loss: {teacher_loss.item():.4f}")
+
+
 # Training configuration
+# 学习率scheduling;
 learning_rate = 0.01
 beta1 = 0.5
 beta2 = 0.999
@@ -319,17 +509,7 @@ teacher_weights = {"wadv": 0.5, "wY": 1.0}
 student_weights = {"wV": 0.5, "wS": 1.0}
 
 # Initialize models
-ev_input_dim = 28
-ev_latent_dim = 64
-es_input_dim = 10
-es_hidden_dim = 300
-dv_output_dim = 28
-CSI_PATH = "./data/CSI_train_new.csv"
-Video_PATH = "./data/points_train.csv"
-CSI_test = "./data/CSI_test_legwave_25.csv"
-Video_test = "./data/points_test_legwave.csv"
-CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
-Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
+# 所有参数进行grid-search.
 
 model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
 
@@ -337,15 +517,12 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1,
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCELoss()
 
-# 25条子载波否则会报错ParserError: Error tokenizing data. C error: Expected 75 fields in line 20, saw 100
-#aa = pd.read_csv(CSI_PATH, header=None,low_memory=False,encoding="utf-8-sig")
-with open(CSI_PATH, "r", encoding='utf-8-sig') as csvfile:
-    csvreader = csv.reader(csvfile)
-    data1 = list(csvreader)  # 将读取的数据转换为列表
-aa = pd.DataFrame(data1)
+model.teacher_encoder_ev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
+model.teacher_decoder_dv.load_state_dict(teacher_model_G.teacher_decoder_dv.state_dict())
+# model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discriminator_c.state_dict())
 
-ff = pd.read_csv(Video_PATH, header=None)
-print("data has loaded.")
+# 25条子载波否则会报错ParserError: Error tokenizing data. C error: Expected 75 fields in line 20, saw 100
+
 # 50条子载波
 # csi_test = pd.read_csv(CSI_test, header=None)
 # 25条子载波
@@ -359,20 +536,6 @@ print("data has loaded.")
 # print(aa.shape)
 
 
-def fillna_with_previous_values(s):
-    non_nan_values = s[s.notna()].values
-    # Gets the location of the missing value
-    nan_indices = s.index[s.isna()]
-    # Calculate the number of elements to fill
-    n_fill = len(nan_indices)
-    # Count the number of repetitions required
-    n_repeat = int(np.ceil(n_fill / len(non_nan_values)))
-    # Generate the fill value
-    fill_values = np.tile(non_nan_values, n_repeat)[:n_fill]
-    # Fill missing value
-    s.iloc[nan_indices] = fill_values
-    return s
-
 
 # aa = aa.apply(fillna_with_previous_values, axis=1)
 # csi_test = csi_test.apply(fillna_with_previous_values, axis=1)
@@ -385,24 +548,25 @@ def fillna_with_previous_values(s):
 #         result_array[i] = 3 * (i // 2)
 #     else:
 #         result_array[i] = 3 * (i // 2) + 1
-if(os.path.exists('./data/CSI_avg.csv')!=True):
-    bb = reshape_and_average(aa)
-    np.savetxt('./data/CSI_avg.csv', bb, delimiter=',')
-else:
-    with open('./data/CSI_avg.csv', "r", encoding='utf-8-sig') as csvfile:
-        csvreader = csv.reader(csvfile)
-        data1 = list(csvreader)  # 将读取的数据转换为列表
-    bb = pd.DataFrame(data1)
-Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为关键点坐标，按照xi，yi排序
-CSI_train = bb.values.astype('float32')
+# if(os.path.exists('./data/CSI_avg.csv')!=True):
+#     bb = reshape_and_average(aa)
+#     np.savetxt('./data/CSI_avg.csv', bb, delimiter=',')
+# else:
+#     with open('./data/CSI_avg.csv', "r", encoding='utf-8-sig') as csvfile:
+#         csvreader = csv.reader(csvfile)
+#         data1 = list(csvreader)  # 将读取的数据转换为列表
+    # bb = pd.DataFrame(data1)
+# bb = reshape_and_average(aa)   
+# Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为关键点坐标，按照xi，yi排序
+# CSI_train = bb.values.astype('float32')
 
 # csi_test = csi_test.values.astype('float32')
 # video_test = video_test.values.astype('float32')
 
-CSI_train = CSI_train / np.max(CSI_train)
-Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
-Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
-Video_train = Video_train.reshape(len(Video_train), -1)
+# CSI_train = CSI_train / np.max(CSI_train)
+# Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
+# Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
+# Video_train = Video_train.reshape(len(Video_train), -1)
 
 # csi_test = csi_test / np.max(csi_test)
 # video_test = video_test.reshape(len(video_test), 14, 2)
@@ -417,44 +581,44 @@ Video_train = Video_train.reshape(len(Video_train), -1)
 
 # Divide the training set and test set
 # data_train, data_test = train_test_split(data, test_size=0.2, random_state=0)
-data = np.hstack((Video_train, CSI_train))  # merge(V,S)
-data_length = len(data)
-train_data_length = int(data_length * 0.9)
-test_data_length = int(data_length - train_data_length)
-batch_size = 1000
-np.random.shuffle(data)  # 打乱data顺序，体现随机
+# data = np.hstack((Video_train, CSI_train))  # merge(V,S)
+# data_length = len(data)
+# train_data_length = int(data_length * 0.9)
+# test_data_length = int(data_length - train_data_length)
+# batch_size = 300
+# np.random.shuffle(data)  # 打乱data顺序，体现随机
 
 # 视频帧是20帧每秒，每秒取一帧数据进行训练，缓解站立数据过多对训练数据造成的不平衡
-f_train = data[19::20, 0:28]
-# f = torch.from_numpy(data[0:100,0:50])
-# f = f.view(100,50,1,1,1)
-a_train = data[19::20, 28:78]
-# a = torch.from_numpy(data[0:100,50:800])
-# a = a.view(100,50,10)
-original_length = f_train.shape[0]
+# f_train = data[19::20, 0:28]
+# # f = torch.from_numpy(data[0:100,0:50])
+# # f = f.view(100,50,1,1,1)
+# a_train = data[19::20, 28:78]
+# # a = torch.from_numpy(data[0:100,50:800])
+# # a = a.view(100,50,10)
+# original_length = f_train.shape[0]
 
-# 剩余作为测试
-g = torch.from_numpy(data[9::19,0:28]).double()
-b = torch.from_numpy(data[9::19,28:78]).double()
-b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
-'''
+# # 剩余作为测试
+# g = torch.from_numpy(data[11::20,0:28]).double()
+# b = torch.from_numpy(data[11::20,28:78]).double()
+# b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+
 # 训练模型 1000 lr=0.01
 # selayer 800 0.0023
 # CBAM 1000 0.0022
 # 非注意力机制训练的模型结果不稳定，使用注意力机制的模型训练结果变化不大，考虑训练样本的多元
-'''
 
-'''
+
 # 1. 原来的教师损失函数导致教师模型的损失不变，但是效果似乎比使用新的损失效果好。
 # 2. 教师模型中使用z_atti = self.CBAM(z)和v_atti = self.CBAM(v)，但是在学生模型中不使用CBAM模块，最终loss更低，比在学生模型中也使用该模块效果要好；
 # 3. 在教师模型中使用selayer似乎比使用CBAM模块效果要好。
 # 4. 教师模型和学生模型中都使用selayer似乎效果不错。
 # 5. 在变化不大的素材里，过多的使用注意力机制会导致输出结果趋于一个取平均的状态
-'''
-num_epochs =1000
 
+num_epochs =100
+batch_size = 256
+# arr_loss = np.
+# 开始打印discrimination的参数
 for epoch in range(num_epochs):
-
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
     f = torch.from_numpy(f_train[random_indices, :]).double()
     a = torch.from_numpy(a_train[random_indices, :]).double()
@@ -462,47 +626,50 @@ for epoch in range(num_epochs):
     a = a.view(batch_size, int(len(a_train[0]) / 10), 10)
 
     optimizer.zero_grad()
+    z, y, v, s = model(f, a)
 
-    if (torch.cuda.is_available()):
-        f = f.cuda()
-        a = a.cuda()
-    try:
-        with autocast():
-            z, y, v, s = model(f, a)
-    except RuntimeError as exception:
-        if "out of memory" in str(exception):
-            print('WARNING: out of memory')
-            if hasattr(torch.cuda, 'empty_cache'):
-                torch.cuda.empty_cache()
-            else:
-                raise exception
+    # if (torch.cuda.is_available()):
+    #     f = f.cuda()
+    #     a = a.cuda()
+    # try:
+    #     with autocast():
+    #         z, y, v, s = model(f, a)
+    # except RuntimeError as exception:
+    #     if "out of memory" in str(exception):
+    #         print('WARNING: out of memory')
+    #         if hasattr(torch.cuda, 'empty_cache'):
+    #             torch.cuda.empty_cache()
+    #         else:
+    #             raise exception
     # 计算教师模型的损失
     '''
-    target = model.teacher_discriminator_c(f)
-    label = torch.ones_like(target)
-    real_loss = criterion2(target, label)
-    # print(real_loss)
+    # target = model.teacher_discriminator_c(f)
+    # label = torch.ones_like(target)
+    # real_loss = criterion2(target, label)
+    # # print(real_loss)
 
-    target2 = 1 - model.teacher_discriminator_c(y)
-    label2 = torch.ones_like(target2)
-         #label2 = torch.zeros_like(target2)
-    fake_loss = criterion2(target2, label2)
-    # print(fake_loss)
-    teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
+    # target2 = 1 - model.teacher_discriminator_c(y)
+    # label2 = torch.ones_like(target2)
+    #      #label2 = torch.zeros_like(target2)
+    # fake_loss = criterion2(target2, label2)
+    # # print(fake_loss)
+    # teacher_loss = criterion1(y, f) + 0.5 * (real_loss + fake_loss)
     '''
-    #'''
 
-    eps = 1e-8#平滑值，防止出现log0
-    real_prob = model.teacher_discriminator_c(f)
-    fake_prob = model.teacher_discriminator_c(y)
-    d_loss = -torch.mean(torch.log(real_prob + eps) + torch.log(1 - fake_prob + eps))
-    g_loss = -torch.mean(torch.log(fake_prob + eps))
-    Ladv = d_loss + g_loss
-    teacher_loss = 0.5*Ladv+criterion1(f,y)
+
+    # eps = 1e-8#平滑值，防止出现log0
+    # real_prob = model.teacher_discriminator_c(f)
+    # fake_prob = model.teacher_discriminator_c(y)
+    # d_loss = -torch.mean(torch.log(real_prob + eps) + torch.log(1 - fake_prob + eps))
+    # g_loss = -torch.mean(torch.log(fake_prob + eps))
+    # Ladv = d_loss + g_loss
+    # teacher_loss = 0.5*Ladv+criterion1(f,y)
+    teacher_loss = criterion1(f,y)
 
     #teacher_loss.backward()
     #optimizer.step()
-    #'''
+
+
     # 计算学生模型的损失
     student_loss =0.5 *criterion1(v, z) +criterion1(s, y)
 
@@ -536,7 +703,8 @@ np.savetxt("./data/output/real_output_training.csv", fnp, delimiter=',')
 # 参数传递
 student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
-student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
+student_model.student_decoder_ds.load_state_dict(model.teacher_decoder_dv.state_dict())
+# student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
     b = b.to(device)
@@ -555,4 +723,4 @@ with torch.no_grad():
     np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
     np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
     
-# '''
+
