@@ -9,7 +9,7 @@ import json
 import numpy as np
 
 def AnalysisJson():
-    file_path = "E:\\matlab\\data\\3DHAR\\walk3\\" #一个视频经过OpenPose处理后，每一帧的人体骨架点JSON数据所在文件夹
+    file_path = "E:\\openpose\\openpose1\\output\\test\\" #一个视频经过OpenPose处理后，每一帧的人体骨架点JSON数据所在文件夹
     files = os.listdir(file_path)  # 遍历file_path下所有的子目录及文件
     points = np.zeros((len(files),75))
     i = 0
@@ -33,9 +33,10 @@ def AnalysisJson():
             i = i+1
             #temp["data"]     # 因为此时已经转换为了字典类型，对key(data) 取值后可以得到每天的具体空气数据的value值
     points = points.reshape(len(points),25,3)   
-    k14_p1 = points[0:3600,0:8,0:2]
-    k14_p2 = points[0:3600,9:15,0:2]
+    k14_p1 = points[0:800,0:8,0:2]
+    k14_p2 = points[0:800,9:15,0:2]
     k14 = np.concatenate((k14_p1, k14_p2), axis=1)
+    
 # 本方案中14个点分别表示的内容，跟OpenPose的稍微不一样，我们取的是它25个点中的第0,1,2,3,4,5,6,7,9,10,11,12,13,14这14个点。    
 #     {0,  "Nose"}
 #     {1,  "Neck"}
@@ -52,8 +53,11 @@ def AnalysisJson():
 #     {12, "LKnee"}
 #     {13, "LAnkle"}
 
+# k14(28)-k14(22)>20表示左腿或者右腿在抬起。k14(10)-k14(6)>180表示双臂在抬起。
+
+
     
-    OutTextPath = "E:\\matlab\\data\\3DHAR\\points_walk3.csv"
+    OutTextPath = "E:\\openpose\\openpose1\\output\\test\\points_test.csv"
     np.savetxt(OutTextPath, k14.reshape(len(k14),-1),delimiter=',')
     
 if __name__ == '__main__':

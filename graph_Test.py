@@ -4,7 +4,7 @@ import numpy as np
 training = False
 #读取数据，并对数据进行处理，准备绘制图像
 CSI_OUTPUT_PATH="./data/output/real_output_training.csv"
-Video_OUTPUT_PATH="./data/output/points_merged_output_training.csv"
+Video_OUTPUT_PATH="./data/points_in.csv"
 #Video_OUTPUT_PATH="./data/points_train.csv"
 CSI_OUTPUT_TRAINING_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_TRAINING_PATH="./data/output/points_merged_output_training.csv"
@@ -53,9 +53,9 @@ def draw_single_pic(i,arrary,pic_name):
 pics_num = 50
 base=0
 for i in range(base,base+pics_num):
-    num=i+100
-    draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
-    draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
+    num=i+400
+    # draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
+    draw_single_pic(num,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
     #draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
     #draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
 

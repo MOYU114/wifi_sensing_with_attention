@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from torch.cuda.amp import autocast
+import csv
 
 if(torch.cuda.is_available()):
     print("Using GPU for training.")
@@ -200,7 +201,7 @@ class TeacherStudentModel(nn.Module):
         v = self.student_encoder_es(a)
         #v_trans = self.Transformer(z,v)
         v_trans = v
-        s = self.student_decoder_ds(v_trans)
+        s = self.teacher_decoder_dv(v_trans)
 
         return z, y, v_trans, s
 
@@ -244,8 +245,8 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 400
 dv_output_dim = 28
-CSI_PATH="./data/CSI_merged.csv"
-Video_PATH="./data/points_merged.csv"
+CSI_PATH="./data/CSI_in.csv"
+Video_PATH="./data/points_in.csv"
 CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
 
@@ -259,7 +260,11 @@ criterion2 = nn.BCELoss() #使用autocast
 
 
 
-aa = pd.read_csv(CSI_PATH, header=None)
+# aa = pd.read_csv(CSI_PATH, header=None)
+with open(CSI_PATH, "r", encoding='utf-8-sig') as csvfile:
+    csvreader = csv.reader(csvfile)
+    data1 = list(csvreader)
+aa = pd.DataFrame(data1) 
 #aa = pd.read_csv(CSI_PATH, header=None,delimiter=",")
 ff = pd.read_csv(Video_PATH, header=None)
 
@@ -369,7 +374,7 @@ for epoch in range(num_epochs):
 #参数传递
 student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
-student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
+student_model.student_decoder_ds.load_state_dict(model.teacher_decoder_dv.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
     b = b.to(device)
