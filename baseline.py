@@ -215,6 +215,29 @@ class StudentModel(nn.Module):
         v = self.student_encoder_es(x)
         s = self.student_decoder_ds(v)
         return s
+    
+# 通过关节点的制约关系得到wave，leg和stand的索引，然后返回相同数量的三种类别的索引
+def group_list(frame_value):
+    leg_index = []
+    wave_index = []
+    stand_index = []
+
+    for i in range(len(frame_value)):
+        if frame_value[i,9]-frame_value[i,5] < 50:
+            wave_index.append(i)
+        elif frame_value[i,26]-frame_value[i,20] > 160:
+            leg_index.append(i)
+        elif frame_value[i,26]-frame_value[i,20] < 100 and frame_value[i,9]-frame_value[i,5] > 150:
+            stand_index.append(i)
+        else:
+            continue
+        
+    length_min = min(len(wave_index),len(leg_index),len(stand_index))
+    leg_index = leg_index[0:length_min]
+    wave_index = wave_index[0:length_min]
+    stand_index = stand_index[0:length_min]
+    merged_index = leg_index + wave_index + stand_index
+    return merged_index
 
 # # Loss functions
 # def compute_teacher_loss(real_videos, fake_videos, discriminator_outputs_real, discriminator_outputs_fake):
@@ -296,6 +319,10 @@ Video_train = ff.values.astype('float32')#共990行，每行28个数据，为关
 # Video_train = Video_train[:,result_array]
 CSI_train = aa.values.astype('float32')
 
+merged_index = group_list(Video_train)
+Video_train = Video_train[merged_index,:]
+CSI_train = CSI_train[merged_index,:]
+
 CSI_train = CSI_train/np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train),14,2)#分成990组14*2(x,y)的向量
 Video_train = Video_train/[1280,720] #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
@@ -322,7 +349,7 @@ a_train = data[0:train_data_length,28:778]
 # a = torch.from_numpy(data[0:100,50:800])
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
-batch_size = 200#如果调整训练集测试集大小，大小记得调整数值
+batch_size = 256#如果调整训练集测试集大小，大小记得调整数值
 #剩余作为测试
 g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
 b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()

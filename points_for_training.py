@@ -378,7 +378,8 @@ def group_list(frame_value):
     leg_index = leg_index[0:length_min]
     wave_index = wave_index[0:length_min]
     stand_index = stand_index[0:length_min]
-    return leg_index, wave_index, stand_index
+    merged_index = leg_index + wave_index + stand_index
+    return merged_index
 
 ev_input_dim = 28
 ev_latent_dim = 64
@@ -405,18 +406,23 @@ bb = reshape_and_average(aa)                        #把多个CSI数据包平均
 Video_train = ff.values.astype('float32')
 CSI_train = bb.values.astype('float32')
 
+merged_index = group_list(Video_train)
+Video_train = Video_train[merged_index,:]
+CSI_train = CSI_train[merged_index,:]
+
 CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
 Video_train = Video_train / [1280, 720]            #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
 Video_train = Video_train.reshape(len(Video_train), -1)
 
 data = np.hstack((Video_train, CSI_train))
+np.random.shuffle(data)
 data_length = len(data)
 train_data_length = int(data_length * 0.9)
 test_data_length = int(data_length - train_data_length)
 
-f_train = data[19::20, 0:28]
-a_train = data[19::20, 28:78]
+f_train = data[:, 0:28]
+a_train = data[:, 28:78]
 # a = torch.from_numpy(data[0:100,50:800])
 # f = torch.from_numpy(data[0:100,0:50])
 # f = f.view(100,50,1,1,1)
@@ -424,8 +430,8 @@ a_train = data[19::20, 28:78]
 original_length = f_train.shape[0]
 
 # 剩余作为测试
-g = torch.from_numpy(data[11::20,0:28]).double()
-b = torch.from_numpy(data[11::20,28:78]).double()
+g = torch.from_numpy(data[11::10,0:28]).double()
+b = torch.from_numpy(data[11::10,28:78]).double()
 b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
 
 
@@ -463,7 +469,7 @@ teacher_model_D.apply(weights_init)
 
 torch.autograd.set_detect_anomaly(True)
 Teacher_num_epochs = 250
-teacher_batch_size = 512
+teacher_batch_size = 256
 for epoch in range(Teacher_num_epochs):
     random_indices = np.random.choice(original_length, size=teacher_batch_size, replace=False)
     f = torch.from_numpy(f_train[random_indices, :]).double()
