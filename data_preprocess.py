@@ -73,3 +73,4 @@ for i in range(4):
         draw_single_pic(i,data_img,"img"+str(i)+"_"+str(j)+".png")
 
 
+

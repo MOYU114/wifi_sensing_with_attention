@@ -438,6 +438,7 @@ for i in range(teacher_epochs):
             # 保存图像
             pil_image.save(filename)
         '''
+
         real_prob = teacher_model.teacher_discriminator_c(f)
         fake_prob = teacher_model.teacher_discriminator_c(y)
         teacher_loss = 0.5 * criterion1(fake_prob, real_prob) + criterion1(y, f)#(result,target)

@@ -208,6 +208,7 @@ embedding_dim=10
 teacher_model=model = TeacherModel(points_seq_len, n_features, embedding_dim).to(device)
 model = TeacherStudentModel(csi_seq_len,points_seq_len, n_features, embedding_dim).to(device)
 
+
 CSI_PATH = "./data/static data/CSI_new.csv"
 Video_PATH = "./data/static data/point_new.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
