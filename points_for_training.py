@@ -324,10 +324,10 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 300
 dv_output_dim = 28
-CSI_PATH = "./data/CSI_train_new.csv"
-Video_PATH = "./data/points_train.csv"
-CSI_test = "./data/CSI_test_legwave_25.csv"
-Video_test = "./data/points_test_legwave.csv"
+CSI_PATH = "./data/static data/CSI_new.csv"
+Video_PATH = "./data/static data/point_new.csv"
+#CSI_test = "./data/CSI_test_legwave_25.csv"
+#Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
 
@@ -385,11 +385,11 @@ def fillna_with_previous_values(s):
 #         result_array[i] = 3 * (i // 2)
 #     else:
 #         result_array[i] = 3 * (i // 2) + 1
-if(os.path.exists('./data/CSI_avg.csv')!=True):
+if(os.path.exists('./data/static data/CSI_avg.csv')!=True):
     bb = reshape_and_average(aa)
-    np.savetxt('./data/CSI_avg.csv', bb, delimiter=',')
+    np.savetxt('./data/static data/CSI_avg.csv', bb, delimiter=',')
 else:
-    with open('./data/CSI_avg.csv', "r", encoding='utf-8-sig') as csvfile:
+    with open('./data/static data/CSI_avg.csv', "r", encoding='utf-8-sig') as csvfile:
         csvreader = csv.reader(csvfile)
         data1 = list(csvreader)  # 将读取的数据转换为列表
     bb = pd.DataFrame(data1)
@@ -403,7 +403,11 @@ CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
 Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
 Video_train = Video_train.reshape(len(Video_train), -1)
-
+'''
+Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
+Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
+Video_train = Video_train.reshape(len(Video_train), -1)
+'''
 # csi_test = csi_test / np.max(csi_test)
 # video_test = video_test.reshape(len(video_test), 14, 2)
 # video_test = video_test / [1280, 720]
@@ -424,19 +428,14 @@ test_data_length = int(data_length - train_data_length)
 batch_size = 1000
 np.random.shuffle(data)  # 打乱data顺序，体现随机
 
-# 视频帧是20帧每秒，每秒取一帧数据进行训练，缓解站立数据过多对训练数据造成的不平衡
-f_train = data[19::20, 0:28]
-# f = torch.from_numpy(data[0:100,0:50])
-# f = f.view(100,50,1,1,1)
-a_train = data[19::20, 28:78]
-# a = torch.from_numpy(data[0:100,50:800])
-# a = a.view(100,50,10)
+
+f_train = data[0:train_data_length, 0:28]
+a_train = data[0:train_data_length, 28:]
 original_length = f_train.shape[0]
 
 # 剩余作为测试
-g = torch.from_numpy(data[9::19,0:28]).double()
-b = torch.from_numpy(data[9::19,28:78]).double()
-b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+g = torch.from_numpy(data[train_data_length:,0:28]).double()
+b = torch.from_numpy(data[train_data_length:,28:]).double()
 '''
 # 训练模型 1000 lr=0.01
 # selayer 800 0.0023

@@ -8,6 +8,8 @@ Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
 #Video_OUTPUT_PATH="./data/points_train.csv"
 CSI_OUTPUT_TRAINING_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_TRAINING_PATH="./data/output/points_merged_output_training.csv"
+#data_path="./data/static data/point_left_right_leg_stand.csv"
+
 if training:
     CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_TRAINING_PATH, header=None)
     Video_OUTPUT = pd.read_csv(Video_OUTPUT_TRAINING_PATH, header=None)
@@ -21,16 +23,23 @@ CSI_OUTPUT=CSI_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], a
 Video_OUTPUT=Video_OUTPUT.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
 CSI_OUTPUT = np.array(CSI_OUTPUT.tolist())
 Video_OUTPUT = np.array(Video_OUTPUT.tolist())
-
+'''
+data_img=pd.read_csv(data_path, header=None)
+SAVE_PATH = "./data/output/photo/training/"
+data_img=data_img.apply(lambda x: [x[i:i+2] for i in range(0, len(x), 2)], axis=1)
+data_img = np.array(data_img.tolist())
+'''
 def draw_single_pic(i,arrary,pic_name):
     points_num = len(arrary[0])
     x=[]
     y=[]
     colors = np.array(["red","red", "green","green","green","orange","orange","orange", "purple", "purple","purple","cyan","cyan","cyan" ])
+    plt.figure(figsize=(4.65, 3.65))
     for j in range(points_num):
         x.append(arrary[i][j][0])
         y.append(arrary[i][j][1])
     #绘制点
+
     plt.scatter(x, y,c = colors)
     plt.gca().invert_yaxis()
     #链接边
@@ -48,14 +57,16 @@ def draw_single_pic(i,arrary,pic_name):
     plt.plot([x[11], x[12]], [y[11], y[12]])
     plt.plot([x[12], x[13]], [y[12], y[13]])
     #plt.show()
-    plt.savefig(SAVE_PATH+pic_name)
-    plt.clf()
-pics_num = 100
+    plt.axis('off')
+    plt.savefig(SAVE_PATH+pic_name,transparent=True)
+    plt.close()
+pics_num = 20
 base=0
 for i in range(base,base+pics_num):
     num=i+1
+
+    #draw_single_pic(i,data_img,"points_img"+str(num)+".png")
     draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
     draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
-    #draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
-    #draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
+
 
