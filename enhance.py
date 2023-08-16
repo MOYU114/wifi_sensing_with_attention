@@ -101,8 +101,10 @@ def reshape_and_average(x):
         reshaped_data = row_data.reshape(-1, 50)
         reshaped_data = pd.DataFrame(reshaped_data).replace({None: np.nan}).values
         reshaped_data = pd.DataFrame(reshaped_data).dropna().values
+        non_empty_rows = np.any(reshaped_data != '', axis=1)
+        filtered_arr = reshaped_data[non_empty_rows]
         reshaped_data = np.asarray(reshaped_data, dtype=np.float64)
-        averaged_data[i] = np.nanmean(reshaped_data, axis=0)  # Compute column-wise average
+        averaged_data[i] = np.nanmean(filtered_arr, axis=0)  # Compute column-wise average
     averaged_df = pd.DataFrame(averaged_data, columns=None)
     return averaged_df
 
@@ -118,7 +120,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.5, 0.999))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCEWithLogitsLoss()
 
-path_in = "./data/CSI_in_wave1.csv"
+path_in = "./data/CSI_train.csv"
 path_out = "./data/CSI_out_wave1.csv"
 
 with open(path_in, "r") as csvfile:

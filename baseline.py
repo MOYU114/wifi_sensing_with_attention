@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from torch.cuda.amp import autocast
+import csv
 
 if(torch.cuda.is_available()):
     print("Using GPU for training.")
@@ -200,7 +201,7 @@ class TeacherStudentModel(nn.Module):
         v = self.student_encoder_es(a)
         #v_trans = self.Transformer(z,v)
         v_trans = v
-        s = self.student_decoder_ds(v_trans)
+        s = self.teacher_decoder_dv(v_trans)
 
         return z, y, v_trans, s
 
@@ -214,6 +215,29 @@ class StudentModel(nn.Module):
         v = self.student_encoder_es(x)
         s = self.student_decoder_ds(v)
         return s
+    
+# 通过关节点的制约关系得到wave，leg和stand的索引，然后返回相同数量的三种类别的索引
+def group_list(frame_value):
+    leg_index = []
+    wave_index = []
+    stand_index = []
+
+    for i in range(len(frame_value)):
+        if frame_value[i,9]-frame_value[i,5] < 50:
+            wave_index.append(i)
+        elif frame_value[i,26]-frame_value[i,20] > 160:
+            leg_index.append(i)
+        elif frame_value[i,26]-frame_value[i,20] < 100 and frame_value[i,9]-frame_value[i,5] > 150:
+            stand_index.append(i)
+        else:
+            continue
+        
+    length_min = min(len(wave_index),len(leg_index),len(stand_index))
+    leg_index = leg_index[0:length_min]
+    wave_index = wave_index[0:length_min]
+    stand_index = stand_index[0:length_min]
+    merged_index = leg_index + wave_index + stand_index
+    return merged_index
 
 # # Loss functions
 # def compute_teacher_loss(real_videos, fake_videos, discriminator_outputs_real, discriminator_outputs_fake):
@@ -244,8 +268,8 @@ ev_latent_dim = 64
 es_input_dim = 10
 es_hidden_dim = 400
 dv_output_dim = 28
-CSI_PATH="./data/CSI_merged.csv"
-Video_PATH="./data/points_merged.csv"
+CSI_PATH="./data/CSI_in.csv"
+Video_PATH="./data/points_in.csv"
 CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
 
@@ -259,7 +283,11 @@ criterion2 = nn.BCELoss() #使用autocast
 
 
 
-aa = pd.read_csv(CSI_PATH, header=None)
+# aa = pd.read_csv(CSI_PATH, header=None)
+with open(CSI_PATH, "r", encoding='utf-8-sig') as csvfile:
+    csvreader = csv.reader(csvfile)
+    data1 = list(csvreader)
+aa = pd.DataFrame(data1) 
 #aa = pd.read_csv(CSI_PATH, header=None,delimiter=",")
 ff = pd.read_csv(Video_PATH, header=None)
 
@@ -291,6 +319,10 @@ Video_train = ff.values.astype('float32')#共990行，每行28个数据，为关
 # Video_train = Video_train[:,result_array]
 CSI_train = aa.values.astype('float32')
 
+merged_index = group_list(Video_train)
+Video_train = Video_train[merged_index,:]
+CSI_train = CSI_train[merged_index,:]
+
 CSI_train = CSI_train/np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train),14,2)#分成990组14*2(x,y)的向量
 Video_train = Video_train/[1280,720] #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
@@ -317,7 +349,7 @@ a_train = data[0:train_data_length,28:778]
 # a = torch.from_numpy(data[0:100,50:800])
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
-batch_size = 200#如果调整训练集测试集大小，大小记得调整数值
+batch_size = 256#如果调整训练集测试集大小，大小记得调整数值
 #剩余作为测试
 g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
 b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()
@@ -369,7 +401,7 @@ for epoch in range(num_epochs):
 #参数传递
 student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
-student_model.student_decoder_ds.load_state_dict(model.student_decoder_ds.state_dict())
+student_model.student_decoder_ds.load_state_dict(model.teacher_decoder_dv.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
     b = b.to(device)
