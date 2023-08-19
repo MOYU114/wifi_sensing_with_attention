@@ -26,39 +26,34 @@ else:
 
 # Teacher Model Components
 class EncoderEv(nn.Module):
-    def __init__(self, seq_len, n_features, embedding_dim=64):
+    def __init__(self, input_dim=28, embedding_dim=7):
         super(EncoderEv, self).__init__()
-        self.seq_len, self.n_features = seq_len, n_features
-        self.embedding_dim, self.hidden_dim = embedding_dim, 2 * embedding_dim
-
-        self.rnn1 = nn.LSTM(n_features,self.hidden_dim,num_layers=1,batch_first=True)
-        self.rnn2 = nn.LSTM(self.hidden_dim, embedding_dim, num_layers=1, batch_first=True)
+        self.L1=nn.Sequential(
+            nn.Linear(input_dim,14),
+            nn.LeakyReLU(),
+            nn.Linear(14, embedding_dim),
+            nn.LeakyReLU(),
+        )
     def forward(self, x):
-        x = x.reshape((1, self.seq_len, self.n_features))
-        x, (_, _) = self.rnn1(x)
-        x, (h, _) = self.rnn2(x)
+        x=self.L1(x)
         # print(x.shape)
-        return h.reshape((self.n_features, self.embedding_dim))
+        return x
 
 
 class DecoderDv(nn.Module):
-    def __init__(self, seq_len, input_dim=64, n_features=1):
+    def __init__(self, embedding_dim=7, output_dim=28):
         super(DecoderDv, self).__init__()
-        self.seq_len, self.input_dim = seq_len, input_dim
-        self.hidden_dim, self.n_features = 2 * input_dim, n_features
-
-        self.rnn1 = nn.LSTM(input_dim,input_dim,num_layers=1,batch_first=True)
-        self.rnn2 = nn.LSTM(input_dim,self.hidden_dim,num_layers=1,batch_first=True)
-        self.output_layer = nn.Linear(self.hidden_dim, n_features)
+        self.L2=nn.Sequential(
+            nn.Linear(embedding_dim, 14),
+            nn.LeakyReLU(),
+            nn.Linear(14, output_dim),
+            nn.Sigmoid()
+        )
 
     def forward(self, x):
-        x = x.repeat(self.seq_len, self.n_features)
-        x = x.reshape((self.n_features, self.seq_len, self.input_dim))
-        x, (hidden_n, cell_n) = self.rnn1(x)
-        x, (hidden_n, cell_n) = self.rnn2(x)
-        x = x.reshape((self.seq_len, self.hidden_dim))
+        x=self.L2(x)
 
-        return self.output_layer(x)
+        return x
 
 '''
 class DiscriminatorC(nn.Module):
@@ -96,20 +91,18 @@ class DiscriminatorC(nn.Module):
 '''
 # Student Model Components
 class EncoderEs(nn.Module):
-    def __init__(self, seq_len, n_features, embedding_dim=64):
+    def __init__(self, csi_input_dim=50, embedding_dim=7):
         super(EncoderEs, self).__init__()
-        self.seq_len, self.n_features = seq_len, n_features
-        self.embedding_dim, self.hidden_dim = embedding_dim, 2 * embedding_dim
-
-        self.rnn1 = nn.LSTM(n_features, self.hidden_dim, num_layers=1, batch_first=True)
-        self.rnn2 = nn.LSTM(self.hidden_dim, embedding_dim, num_layers=1, batch_first=True)
+        self.L3 = nn.Sequential(
+            nn.Linear(csi_input_dim, 25),
+            nn.LeakyReLU(),
+            nn.Linear(25, embedding_dim),
+            nn.LeakyReLU(),
+        )
 
     def forward(self, x):
-        x = x.reshape((1, self.seq_len, self.n_features))
-        x, (_, _) = self.rnn1(x)
-        x, (h, _) = self.rnn2(x)
-        # print(x.shape)
-        return h.reshape((self.n_features, self.embedding_dim))
+        x = self.L3(x)
+        return x
 
 
 # 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
@@ -148,11 +141,11 @@ class SELayer(nn.Module):
         return x * y.expand_as(x)
 
 class TeacherModel(nn.Module):
-    def __init__(self, points_seq_len, n_features, embedding_dim=64):
+    def __init__(self, input_dim,output_dim,embedding_dim=64):
         super(TeacherModel, self).__init__()
-        self.Ev = EncoderEv(points_seq_len, n_features, embedding_dim)
-        self.Dv = DecoderDv(points_seq_len, embedding_dim, n_features)
-        self.selayer = SELayer(embedding_dim).double()
+        self.Ev = EncoderEv(input_dim, embedding_dim)
+        self.Dv = DecoderDv(embedding_dim, output_dim)
+        #self.selayer = SELayer(embedding_dim).double()
     def forward(self,f):
         z = self.Ev(f)
         #z_atti = self.selayer(z)
@@ -160,13 +153,13 @@ class TeacherModel(nn.Module):
         # test = self.teacher_discriminator_c(f)
         return z,y
 class TeacherStudentModel(nn.Module):
-    def __init__(self, csi_seq_len,points_seq_len, n_features, embedding_dim=64):
+    def __init__(self, csi_input_dim,input_dim, output_dim, embedding_dim=7):
         super(TeacherStudentModel, self).__init__()
-        self.Ev = EncoderEv(points_seq_len, n_features, embedding_dim)
-        self.Dv = DecoderDv(points_seq_len, embedding_dim, n_features)
-        self.Es = EncoderEs(csi_seq_len, n_features, embedding_dim)
-        self.Ds = DecoderDv(points_seq_len, embedding_dim, n_features)
-        self.selayer = SELayer(embedding_dim).double()
+        self.Ev = EncoderEv(input_dim, embedding_dim)
+        self.Dv = DecoderDv(embedding_dim, output_dim)
+        self.Es = EncoderEs(csi_input_dim, embedding_dim)
+        self.Ds = self.Dv
+        #self.selayer = SELayer(embedding_dim).double()
     def forward(self,f, a):
         z = self.Ev(f)
         #z_atti = self.selayer(z)
@@ -179,34 +172,35 @@ class TeacherStudentModel(nn.Module):
         s = self.Ds(v)
         return z,y,v,s
 class StudentModel(nn.Module):
-    def __init__(self,csi_seq_len,points_seq_len, n_features, embedding_dim=64):
-        super(TeacherStudentModel, self).__init__()
-        self.Es = EncoderEs(csi_seq_len, n_features, embedding_dim)
-        self.Ds = DecoderDv(points_seq_len, embedding_dim, n_features)
-        self.selayer = SELayer(embedding_dim).double()
+    def __init__(self,csi_input_dim, output_dim, embedding_dim=7):
+        super(StudentModel, self).__init__()
+        self.Es = EncoderEs(csi_input_dim, embedding_dim)
+        self.Ds = DecoderDv(embedding_dim, output_dim)
+        #self.selayer = SELayer(embedding_dim).double()
     def forward(self,a):
         v = self.Es(a)
         #v_atti = self.selayer(v)
         # v_atti = v
         s = self.Ds(v)
-        return v,s
+        return s
 
 
 
 # Training configuration
-learning_rate = 0.01
+learning_rate = 0.001
 beta1 = 0.5
 beta2 = 0.999
 teacher_weights = {"wadv": 0.5, "wY": 1.0}
 student_weights = {"wV": 0.5, "wS": 1.0}
 
 # Initialize models
-csi_seq_len = 50
-points_seq_len = 28#最后输出长度
+csi_input_dim = 50
+input_dim = 28#最后输出长度
 n_features = 1
 embedding_dim=10
-teacher_model=model = TeacherModel(points_seq_len, n_features, embedding_dim).to(device)
-model = TeacherStudentModel(csi_seq_len,points_seq_len, n_features, embedding_dim).to(device)
+
+teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
+model = TeacherStudentModel(csi_input_dim,input_dim, input_dim, embedding_dim).to(device)
 
 
 CSI_PATH = "./data/static data/CSI_new.csv"
@@ -282,7 +276,7 @@ CSI_train = bb.values.astype('float32')
 
 CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
-Video_train = Video_train / [1280, 720]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
+Video_train = Video_train / [800, 700]  # 输入的图像帧是1280×720的，所以分别除以1280和720归一化。
 Video_train = Video_train.reshape(len(Video_train), -1)
 
 # csi_test = csi_test / np.max(csi_test)
@@ -311,8 +305,14 @@ a_train = data[0:train_data_length, 28:]
 original_length = f_train.shape[0]
 
 # 剩余作为测试
-g = torch.from_numpy(data[train_data_length:,0:28]).double()
-b = torch.from_numpy(data[train_data_length:,28:]).double()
+g = data[train_data_length:,0:28]
+b = data[train_data_length:,28:]
+#teacher_model_train
+teacher_f=pd.read_csv("./data/static data/point_left_right_leg_stand.csv", header=None)
+teacher_f=teacher_f.values.astype('float32')
+teacher_f = teacher_f.reshape(len(teacher_f), 14, 2)
+teacher_f = teacher_f/ [800, 700]  # 除以800和700归一化。
+teacher_f = teacher_f.reshape(len(teacher_f), -1)
 '''
 # 训练模型 1000 lr=0.01
 # selayer 800 0.0023
@@ -328,83 +328,72 @@ b = torch.from_numpy(data[train_data_length:,28:]).double()
 # 5. 在变化不大的素材里，过多的使用注意力机制会导致输出结果趋于一个取平均的状态
 '''
 
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
+optimizer = torch.optim.Adam(model.Es.parameters(), lr=learning_rate, betas=(beta1, beta2))
+teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
-criterion2 = nn.BCELoss()
-teacher_num_epochs = 150
-num_epochs = 100
-teacher_batch_size = 1000
-batch_size = 1000
+criterion2 = nn.L1Loss(reduction='sum')
+teacher_num_epochs = 1000
+teacher_batch_size = 4
+num_epochs = 5000
+batch_size = 100
 #teacher_training
 for epoch in range(teacher_num_epochs):
 
-    random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    f = torch.from_numpy(f_train[random_indices, :]).float()
-    f = f.view(batch_size, len(f_train[0]), 1)  # .shape(batch_size,28,1)
+    #random_indices = np.random.choice(original_length, size=batch_size, replace=False)
+    f = torch.from_numpy(teacher_f).float()
+    f = f.view(teacher_batch_size, len(f_train[0]))  # .shape(batch_size,28)
 
     if (torch.cuda.is_available()):
         f = f.cuda()
-    total_teacher_loss = []
-    for i in range(batch_size):
-        with autocast():
-            optimizer.zero_grad()
-            seq_true=f[i]
-            z, seq_pred = teacher_model(f[i])
-            teacher_loss=criterion1(seq_pred, seq_true)
-            # 计算梯度
-            teacher_loss.backward()
-            # 更新模型参数
-            optimizer.step()
-            total_teacher_loss.append(teacher_loss.item())
-    loss=np.mean(total_teacher_loss)
+
+    with autocast():
+        teacher_optimizer.zero_grad()
+        seq_true = f
+        z, seq_pred = teacher_model(f)
+        teacher_loss = criterion1(seq_pred, seq_true)
+        # 计算梯度
+        teacher_loss.backward()
+        # 更新模型参数
+        teacher_optimizer.step()
+        # print(f"{teacher_loss.item():.4f}")
+
     # 打印训练信息
     print(
-        f"teacher_training:Epoch [{epoch + 1}/{teacher_num_epochs}], Teacher Loss: {loss.item():.4f}")
+        f"teacher_training:Epoch [{epoch + 1}/{teacher_num_epochs}], Teacher Loss: {teacher_loss.item():.4f}")
 
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
-teacher_model.Dv.load_state_dict(model.Dv.state_dict())
-teacher_model.Ev.load_state_dict(model.Ev.state_dict())
+model.Dv.load_state_dict(teacher_model.Dv.state_dict())
+model.Ev.load_state_dict(teacher_model.Ev.state_dict())
 
 for epoch in range(num_epochs):
 
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
     f = torch.from_numpy(f_train[random_indices, :]).float()
     a = torch.from_numpy(a_train[random_indices, :]).float()
-    f = f.view(batch_size, len(f_train[0]), 1)  # .shape(batch_size,28,1)
-    a = a.view(batch_size, len(a_train[0]), 1)
+    f = f.view(batch_size, len(f_train[0]))
+    a = a.view(batch_size, len(a_train[0]))
 
     if (torch.cuda.is_available()):
         f = f.cuda()
         a = a.cuda()
-    total_teacher_loss=[]
-    total_student_loss=[]
-    total_total_loss=[]
-    for i in range(batch_size):
-        with autocast():
-            optimizer.zero_grad()
-            f_i=f[i]
-            z, y, v, s = model(f[i], a[i])
+    with autocast():
+        optimizer.zero_grad()
+        if epoch==99:
+            print()
+        z, y, v, s = model(f, a)
 
-            teacher_loss=criterion1(y, f_i)
-            # 计算学生模型的损失
-            student_loss = 0.5 * criterion1(s, y) + criterion1(v, z) + 0.6 * criterion1(s, f_i)
+        teacher_loss = criterion1(y, f)
+        # 计算学生模型的损失
+        student_loss = 0.5 * criterion1(s, y) + criterion1(v, z) + 0.6 * criterion1(s, f)
 
-            total_loss = teacher_loss + student_loss
+        total_loss = teacher_loss + student_loss
 
-            # 计算梯度
-            total_loss.backward()
-            # 更新模型参数
-            optimizer.step()
-            total_teacher_loss.append(teacher_loss.item())
-            total_student_loss.append(student_loss.item())
-            total_total_loss.append(total_loss.item())
-
-    # 打印训练信息
-    loss_t=np.mean(total_teacher_loss)
-    loss_s=np.mean(total_student_loss)
-    loss=np.mean(total_total_loss)
+        # 计算梯度
+        total_loss.backward()
+        # 更新模型参数
+        optimizer.step()
     print(
-        f"training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {loss_t.item():.4f}, Student Loss: {loss_s.item():.4f}, Total Loss: {loss.item():.4f}")
+        f"training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}, Total Loss: {total_loss.item():.4f}")
 
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 
@@ -423,19 +412,23 @@ np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=','
 np.savetxt("./data/output/real_output_training.csv", fnp, delimiter=',')
 
 # 参数传递
-student_model = StudentModel(csi_seq_len,points_seq_len, n_features, embedding_dim).to(device)
+student_model = StudentModel(csi_input_dim, input_dim, embedding_dim).to(device)
 student_model.Es.load_state_dict(model.Es.state_dict())
 student_model.Ds.load_state_dict(model.Ds.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
+#student_batch_size=10
+#random_indices = np.random.choice(len(b), size=student_batch_size, replace=False)
+#b= torch.from_numpy(b[random_indices, :]).float()
+#g= torch.from_numpy(g[random_indices, :]).float()
 with torch.no_grad():
-    b=b.view(batch_size, len(b[0]), 1)
+    #b=b.view(student_batch_size, len(b[0]))
+    b= torch.from_numpy(b).float()
+    g= torch.from_numpy(g).float()
     b = b.to(device)
     g = g.to(device)
 
     r = student_model(b)
-    for i in range(test_data_length):
-        r_i = student_model(b[i])
-        r.append(r_i)
+
     loss = criterion1(r, g)
     # df = pd.DataFrame(r.numpy())
     # df.to_excel("result.xls", index=False)
