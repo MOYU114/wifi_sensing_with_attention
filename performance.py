@@ -30,8 +30,8 @@ def align_all_coordinates(coords_list1,coords_list2):
     return coords_list2
 CSI_OUTPUT=align_all_coordinates(Video_OUTPUT,CSI_OUTPUT)
 
-print(CSI_OUTPUT)
-print(Video_OUTPUT)
+# print(CSI_OUTPUT)
+# print(Video_OUTPUT)
 def euclidean_distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 def PCS(CSI_OUTPUT,Video_OUTPUT,phi):

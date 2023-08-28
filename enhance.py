@@ -10,43 +10,49 @@ import pandas as pd
 import csv
 import numpy as np
 from torch.cuda.amp import autocast
-
-# 定义自编码器
-class Autoencoder(nn.Module):
-    def __init__(self):
-        super(Autoencoder, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))
+    
+class EncoderEv(nn.Module):
+    def __init__(self, embedding_dim, input_dim=50):
+        super(EncoderEv, self).__init__()
+        self.L1=nn.Sequential(
+            nn.Linear(input_dim,25),
+            nn.LeakyReLU(),
+            nn.Linear(25, embedding_dim),
+            nn.LeakyReLU(),
         )
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, 16, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            nn.ConvTranspose2d(16, 50, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+    def forward(self, x):
+        y=self.L1(x)
+        # y = self.L1(x.to(self.L1[0].weight.dtype))
+
+        return y
+
+
+class DecoderDv(nn.Module):
+    def __init__(self, embedding_dim, output_dim=50):
+        super(DecoderDv, self).__init__()
+        self.L2=nn.Sequential(
+            nn.Linear(embedding_dim, 25),
+            nn.LeakyReLU(),
+            nn.Linear(25, output_dim),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
-        _, (h, _) = self.lstm(x)
-        h = h[-1]
-        h = h.unsqueeze(3)
-        v = self.conv(h)
-        # encoded = self.encoder(x)
-        decoded = self.decoder(v)
-        return decoded
+        x=self.L2(x)
+
+        return x
     
+class TeacherModel(nn.Module):
+    def __init__(self, input_dim,  output_dim, embedding_dim=64):
+        super(TeacherModel, self).__init__()
+        self.Ev = EncoderEv(embedding_dim, input_dim)
+        self.Dv = DecoderDv(embedding_dim, output_dim)
+    def forward(self,r,f):
+        s = self.Ev(r)
+        z = self.Ev(f)
+        y = self.Dv(z)
+        return s,z,y
+
 class EncoderEs(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super(EncoderEs, self).__init__()
@@ -61,7 +67,7 @@ class EncoderEs(nn.Module):
         # print(v.shape)
         return v
 
-class DecoderDv(nn.Module):
+class DecoderDs(nn.Module):
     def __init__(self, latent_dim, output_dim):
         super(DecoderDv, self).__init__()
         self.deconv1 = nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=1, padding=1)
@@ -84,7 +90,7 @@ class StudentModel(nn.Module):
     def __init__(self, dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim):
         super(StudentModel, self).__init__()
         self.student_encoder_es = EncoderEs(es_input_dim, es_hidden_dim, ev_latent_dim).double()
-        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).double()
+        self.student_decoder_ds = DecoderDs(ev_latent_dim, dv_output_dim).double()
 
     def forward(self, re, fa):
         s = self.student_encoder_es(re)
@@ -103,25 +109,27 @@ def reshape_and_average(x):
         reshaped_data = pd.DataFrame(reshaped_data).dropna().values
         non_empty_rows = np.any(reshaped_data != '', axis=1)
         filtered_arr = reshaped_data[non_empty_rows]
-        reshaped_data = np.asarray(reshaped_data, dtype=np.float64)
-        averaged_data[i] = np.nanmean(filtered_arr, axis=0)  # Compute column-wise average
+        reshaped_data = np.asarray(filtered_arr, dtype=np.float64)
+        averaged_data[i] = np.nanmean(reshaped_data, axis=0)  # Compute column-wise average
     averaged_df = pd.DataFrame(averaged_data, columns=None)
     return averaged_df
 
 latent_dim = 64
-input_dim = 10
+input_dim = 50
 hidden_dim = 300
 output_dim = 50
+embedding_dim = 10
 
 # 创建自编码器实例
 # autoencoder = Autoencoder()
-model = StudentModel(output_dim, input_dim, hidden_dim, latent_dim)
+# model = StudentModel(output_dim, input_dim, hidden_dim, latent_dim)
+model= TeacherModel(input_dim, input_dim, embedding_dim)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.5, 0.999))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCEWithLogitsLoss()
 
-path_in = "./data/CSI_train.csv"
-path_out = "./data/CSI_out_wave1.csv"
+path_in = "./data/inout/CSI_wave_in_2m1.csv"
+path_out = "./data/inout/CSI_wave_out_2m1.csv"
 
 with open(path_in, "r") as csvfile:
     csvreader = csv.reader(csvfile)
@@ -141,20 +149,22 @@ averageout = reshape_and_average(CSIout)
 CSI_in = averagein / averagein.max()
 CSI_out = averageout / averageout.max()
 data = np.hstack((CSI_in, CSI_out))  # merge(V,S)
-batch_size = 300
+batch_size = 256
 # np.random.shuffle(data)  # 打乱data顺序，体现随机
 
-in_lable = data[:, :50]
+in_real = data[:, :50]
 out_fake = data[:, 50:]
-original_length = in_lable.shape[0]
+original_length = in_real.shape[0]
 
-num_epochs = 150
+num_epochs = 1500
 for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    raw_re = torch.from_numpy(in_lable[random_indices, :]).double()
-    raw_fa = torch.from_numpy(out_fake[random_indices, :]).double()
-    re = raw_re.view(batch_size, 5, 10)  # .shape(batch_size,28,1,1)
-    fa = raw_fa.view(batch_size, 5, 10)
+    raw_re = torch.from_numpy(in_real[random_indices, :]).float()
+    raw_fa = torch.from_numpy(out_fake[random_indices, :]).float()
+    # re = raw_re.view(batch_size, 5, 10)  # .shape(batch_size,28,1,1)
+    # fa = raw_fa.view(batch_size, 5, 10)
+    re = raw_re.view(batch_size, 50)  
+    fa = raw_fa.view(batch_size, 50)
 
     optimizer.zero_grad()
     real_latent, fake_latent, fake = model(re, fa)
