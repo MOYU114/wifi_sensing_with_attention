@@ -6,7 +6,7 @@ training = False
 CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
 #Video_OUTPUT_PATH="./data/points_train.csv"
-CSI_OUTPUT_TRAINING_PATH="./data/output/CSI_merged_output_training.csv"
+CSI_OUTPUT_TRAINING_PATH="./data/output/real_output_training.csv"
 Video_OUTPUT_TRAINING_PATH="./data/output/points_merged_output_training.csv"
 if training:
     CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_TRAINING_PATH, header=None)
@@ -55,7 +55,7 @@ base=0
 for i in range(base,base+pics_num):
     num=i+1
     draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
-    draw_single_pic(num,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
+    draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
     #draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
     #draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
 

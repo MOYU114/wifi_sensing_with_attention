@@ -90,6 +90,7 @@ class DiscriminatorC(nn.Module):
 
 '''
 # Student Model Components
+'''
 class EncoderEs(nn.Module):
     def __init__(self, csi_input_dim=50, embedding_dim=7):
         super(EncoderEs, self).__init__()
@@ -103,7 +104,24 @@ class EncoderEs(nn.Module):
     def forward(self, x):
         x = self.L3(x)
         return x
+'''
+class EncoderEs(nn.Module):
+    def __init__(self, csi_input_dim=50, embedding_dim=7):
+        super(EncoderEs, self).__init__()
+        self.lstm=nn.LSTM(csi_input_dim, 25, num_layers=1,batch_first=True)
+        self.relu=nn.LeakyReLU()
+        self.L3 = nn.Sequential(
+            nn.Linear(25, embedding_dim),
+            nn.LeakyReLU(),
+        )
 
+    def forward(self, x):
+        output, (h, _) = self.lstm(x)
+        h = h[-1]
+        h=self.relu(h)
+        v = self.L3(h)
+        v = v.squeeze()
+        return v
 
 # 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
 
@@ -203,8 +221,9 @@ teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
 model = TeacherStudentModel(csi_input_dim,input_dim, input_dim, embedding_dim).to(device)
 
 
-CSI_PATH = "./data/static data/CSI_new.csv"
-Video_PATH = "./data/static data/point_new.csv"
+CSI_PATH = "./data/inout/move/CSI_wave_left_in1.csv"
+Video_PATH = "./data/inout/move/points_waveleft1.csv"
+CSI_AVG_PATH = "./data/inout/move/CSI_wave_left_in1_avg.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
 # Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -260,11 +279,11 @@ def fillna_with_previous_values(s):
 #         result_array[i] = 3 * (i // 2)
 #     else:
 #         result_array[i] = 3 * (i // 2) + 1
-if (os.path.exists('./data/static data/CSI_avg.csv') != True):
+if (os.path.exists(CSI_AVG_PATH) != True):
     bb = reshape_and_average(aa)
-    np.savetxt('./data/static data/CSI_avg.csv', bb, delimiter=',')
+    np.savetxt(CSI_AVG_PATH, bb, delimiter=',')
 else:
-    with open('./data/static data/CSI_avg.csv', "r", encoding='utf-8-sig') as csvfile:
+    with open(CSI_AVG_PATH, "r", encoding='utf-8-sig') as csvfile:
         csvreader = csv.reader(csvfile)
         data1 = list(csvreader)  # 将读取的数据转换为列表
     bb = pd.DataFrame(data1)
@@ -297,7 +316,7 @@ data_length = len(data)
 train_data_length = int(data_length * 0.9)
 test_data_length = int(data_length - train_data_length)
 
-np.random.shuffle(data)  # 打乱data顺序，体现随机
+#np.random.shuffle(data)  # 打乱data顺序，体现随机
 
 
 f_train = data[0:train_data_length, 0:28]
@@ -308,8 +327,9 @@ original_length = f_train.shape[0]
 g = data[train_data_length:,0:28]
 b = data[train_data_length:,28:]
 #teacher_model_train
-teacher_f=pd.read_csv("./data/static data/point_left_right_leg_stand.csv", header=None)
+teacher_f=pd.read_csv(Video_PATH, header=None)
 teacher_f=teacher_f.values.astype('float32')
+np.random.shuffle(teacher_f)
 teacher_f = teacher_f.reshape(len(teacher_f), 14, 2)
 teacher_f = teacher_f/ [800, 700]  # 除以800和700归一化。
 teacher_f = teacher_f.reshape(len(teacher_f), -1)
@@ -332,20 +352,21 @@ optimizer = torch.optim.Adam(model.Es.parameters(), lr=learning_rate, betas=(bet
 teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.L1Loss(reduction='sum')
-teacher_num_epochs = 1000
-teacher_batch_size = 4
-num_epochs = 5000
-batch_size = 100
+teacher_num_epochs = 10000
+teacher_batch_size = 50
+num_epochs = 10000
+batch_size = 50
 #teacher_training
 for epoch in range(teacher_num_epochs):
 
-    #random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    f = torch.from_numpy(teacher_f).float()
-    f = f.view(teacher_batch_size, len(f_train[0]))  # .shape(batch_size,28)
+    random_indices_t = np.random.choice(original_length, size=teacher_batch_size, replace=False)
+    f = torch.from_numpy(teacher_f[random_indices_t, :]).float()
+    f = f.view(teacher_batch_size, len(teacher_f[0]))  # .shape(batch_size,28)
 
     if (torch.cuda.is_available()):
         f = f.cuda()
-
+    if epoch == 4000:
+        print()
     with autocast():
         teacher_optimizer.zero_grad()
         seq_true = f
@@ -361,30 +382,52 @@ for epoch in range(teacher_num_epochs):
     print(
         f"teacher_training:Epoch [{epoch + 1}/{teacher_num_epochs}], Teacher Loss: {teacher_loss.item():.4f}")
 
+seq_true = f.cpu()
+seq_pred = seq_pred.cpu()
+
+seq_true_np = seq_true.detach().numpy()
+seq_pred_np = seq_pred.detach().numpy()
+seq_true_np = seq_true_np.squeeze()
+seq_pred_np = seq_pred_np.squeeze()
+
+np.savetxt("./data/output/points_merged_output_training.csv", seq_pred_np, delimiter=',')
+np.savetxt("./data/output/real_output_training.csv", seq_true_np, delimiter=',')
+
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 model.Dv.load_state_dict(teacher_model.Dv.state_dict())
 model.Ev.load_state_dict(teacher_model.Ev.state_dict())
+window_size=10
+def create_dataset(X, y, P=10):  # 设置时间窗口P=10
+    features = []
+    targets = []
+    for i in range(len(X) - P):
+        data = X[i:i + P]
+        label = y[i + P]
+        # 保存
+        features.append(data)
+        targets.append(label)
 
+    return torch.stack(features),torch.stack(targets) #x.size=(batchsize-P, P,feature) y.size=(batchsize-P,target)
 for epoch in range(num_epochs):
 
-    random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    f = torch.from_numpy(f_train[random_indices, :]).float()
-    a = torch.from_numpy(a_train[random_indices, :]).float()
+    random_indices = np.random.choice(original_length-batch_size, size=1, replace=False)
+    random_indices=random_indices[0]
+    f = torch.from_numpy(f_train[random_indices:random_indices+batch_size]).float()
+    a = torch.from_numpy(a_train[random_indices:random_indices+batch_size]).float()
     f = f.view(batch_size, len(f_train[0]))
     a = a.view(batch_size, len(a_train[0]))
 
     if (torch.cuda.is_available()):
-        f = f.cuda()
-        a = a.cuda()
+        a_p,f_p = create_dataset(a,f, window_size)
+        f_p =f_p.cuda()
+        a_p = a_p.cuda()
     with autocast():
         optimizer.zero_grad()
-        if epoch==99:
-            print()
-        z, y, v, s = model(f, a)
+        z, y, v, s = model(f_p, a_p)
 
-        teacher_loss = criterion1(y, f)
+        teacher_loss = criterion1(y, f_p)
         # 计算学生模型的损失
-        student_loss = 0.5 * criterion1(s, y) + criterion1(v, z) + 0.6 * criterion1(s, f)
+        student_loss = 0.8 * criterion1(v, z) + criterion1(s, f_p)
 
         total_loss = teacher_loss + student_loss
 
@@ -392,11 +435,12 @@ for epoch in range(num_epochs):
         total_loss.backward()
         # 更新模型参数
         optimizer.step()
+
     print(
         f"training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}, Total Loss: {total_loss.item():.4f}")
 
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
-
+'''
 # 查看训练集效果
 f = f.cpu()
 y = y.cpu()
@@ -410,7 +454,7 @@ fnp = fnp.squeeze()
 np.savetxt("./data/output/CSI_merged_output_training.csv", ynp, delimiter=',')
 np.savetxt("./data/output/points_merged_output_training.csv", snp, delimiter=',')
 np.savetxt("./data/output/real_output_training.csv", fnp, delimiter=',')
-
+'''
 # 参数传递
 student_model = StudentModel(csi_input_dim, input_dim, embedding_dim).to(device)
 student_model.Es.load_state_dict(model.Es.state_dict())
@@ -422,8 +466,9 @@ student_model.Ds.load_state_dict(model.Ds.state_dict())
 #g= torch.from_numpy(g[random_indices, :]).float()
 with torch.no_grad():
     #b=b.view(student_batch_size, len(b[0]))
-    b= torch.from_numpy(b).float()
-    g= torch.from_numpy(g).float()
+    b= torch.from_numpy(b).float()#a
+    g= torch.from_numpy(g).float()#f
+    b, g = create_dataset(b, g, window_size)
     b = b.to(device)
     g = g.to(device)
 
