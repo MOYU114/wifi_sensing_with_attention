@@ -108,7 +108,7 @@ class EncoderEs(nn.Module):
 class EncoderEs(nn.Module):
     def __init__(self, csi_input_dim=50, embedding_dim=7):
         super(EncoderEs, self).__init__()
-        self.lstm=nn.LSTM(csi_input_dim, 25, num_layers=1,batch_first=True)
+        self.gru=nn.GRU(csi_input_dim, 25, num_layers=1,batch_first=True)
         self.relu=nn.LeakyReLU()
         self.L3 = nn.Sequential(
             nn.Linear(25, embedding_dim),
@@ -116,7 +116,7 @@ class EncoderEs(nn.Module):
         )
 
     def forward(self, x):
-        output, (h, _) = self.lstm(x)
+        output, h = self.gru(x)
         h = h[-1]
         h=self.relu(h)
         v = self.L3(h)
@@ -221,9 +221,9 @@ teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
 model = TeacherStudentModel(csi_input_dim,input_dim, input_dim, embedding_dim).to(device)
 
 
-CSI_PATH = "./data/inout/move/CSI_wave_left_in1.csv"
-Video_PATH = "./data/inout/move/points_waveleft1.csv"
-CSI_AVG_PATH = "./data/inout/move/CSI_wave_left_in1_avg.csv"
+CSI_PATH = "./data/inout/move/CSI_leg_right_out1.csv"
+Video_PATH = "./data/inout/move/points_legright1.csv"
+CSI_AVG_PATH = "./data/inout/move/CSI_leg_right_out1_avg.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
 # Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
