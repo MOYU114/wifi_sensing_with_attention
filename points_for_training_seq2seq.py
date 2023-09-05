@@ -144,9 +144,10 @@ class seqDecoder(nn.Module):
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
         self.relu = nn.LeakyReLU()
-
+        self.into =nn.Linear(1,hidden_size)
     def forward(self, input, hidden):
-        output=input.unsqueeze(1)
+        output = self.into(input)
+        output = output.unsqueeze(1)
         output = self.relu(output)
         output, hidden = self.gru(output, hidden)
         output = self.softmax(self.out(output[0]))
@@ -154,18 +155,16 @@ class seqDecoder(nn.Module):
 
     def initHidden(self):
         return torch.zeros(self.num_layers, self.hidden_size)
-#设置初始与结束
-SOS_token=100000.0
-EOS_token=-100000.0
-max_length=10000
 class seq2seq(nn.Module):
     def __init__(self,input_size, hidden_size,output_size, num_layers=1):
         super(seq2seq,self).__init__()
         self.encoder = seqEncoder(input_size,hidden_size,num_layers)
         self.decoder = seqDecoder(hidden_size, output_size,num_layers)
-
+        self.input_size=input_size
+        self.hidden_size=hidden_size
+        self.output_size=output_size
     def forward(self, a):
-
+        a=a.reshape((1, 1, self.input_size))
         # 编码器读取输入序列
         encoder_output, encoder_hidden = self.encoder(a)
 
@@ -175,18 +174,17 @@ class seq2seq(nn.Module):
         # 解码器生成输出序列
         decoder_outputs = []
         batch_size = encoder_output.size(0)
-        decoder_input = torch.empty(batch_size, 1, dtype=torch.float, device=device).fill_(SOS_token)
-        # SOS_token是起始符号的索引
-        for di in range(max_length):  # max_length是输出序列的最大长度
+
+        #需要构建一个(batchsize,1,hidden_dim)的输入,均为0
+        decoder_input = torch.empty(batch_size, 1, dtype=torch.float, device=device)
+        for di in range(self.output_size):  # max_length是输出序列的最大长度
             decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
             topv, topi = decoder_output.topk(1)#选择最大可能
-            if topi.item() == EOS_token:  # EOS_token是终止符号的索引
-                break
-            else:
-                decoder_outputs.append(topi.item())
-                decoder_input = topi.squeeze().detach()
+            decoder_outputs.append(topv.item())
+            decoder_input = topv
 
-        return torch.tensor(decoder_outputs)
+
+        return torch.tensor(decoder_outputs).cuda()
 # 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
 
 def reshape_and_average(x):
@@ -299,18 +297,18 @@ class TeacherStudentModel(nn.Module):
         super(TeacherStudentModel, self).__init__()
         self.Ev = EncoderEv(input_dim, embedding_dim)
         self.Dv = DecoderDv(embedding_dim, output_dim)
-        self.Es = EncoderEs(csi_input_dim, embedding_dim)
+        #self.Es = EncoderEs(csi_input_dim, embedding_dim)
         self.Ds = self.Dv
         #self.Trans = Transformer(csi_input_dim).double()
         #self.selayer = SELayer(embedding_dim).double()
-        #self.seq2seq=seq2seq(csi_input_dim,hidden_dim,embedding_dim)#hidden=10
+        self.seq2seq=seq2seq(csi_input_dim,hidden_dim,embedding_dim)#hidden=10
     def forward(self,f, a):
         z = self.Ev(f)
         #z_atti = self.selayer(z)
         y = self.Dv(z)
         # test = self.teacher_discriminator_c(f)
-        #v = self.seq2seq(a)
-        v = self.Es(a)
+        v = self.seq2seq(a)
+        #v = self.Es(v)
         #v_atti = self.selayer(v)
         # v_atti = v
         s = self.Ds(v)
@@ -318,14 +316,14 @@ class TeacherStudentModel(nn.Module):
 class StudentModel(nn.Module):
     def __init__(self,csi_input_dim, output_dim, hidden_dim=10,embedding_dim=7):
         super(StudentModel, self).__init__()
-        self.Es = EncoderEs(csi_input_dim, embedding_dim)
+        #self.Es = EncoderEs(csi_input_dim, embedding_dim)
         self.Ds = DecoderDv(embedding_dim, output_dim)
         #self.Trans = Transformer(csi_input_dim).double()
         #self.selayer = SELayer(embedding_dim).double()
-        #self.seq2seq = seq2seq(csi_input_dim, hidden_dim, embedding_dim)  # hidden=10
+        self.seq2seq = seq2seq(csi_input_dim, hidden_dim, embedding_dim)  # hidden=10
     def forward(self,a):
-        #v = self.seq2seq(a)
-        v = self.Es(a)
+        v = self.seq2seq(a)
+        #v = self.Es(v)
         #v_atti = self.selayer(v)
         # v_atti = v
         s = self.Ds(v)
@@ -341,12 +339,15 @@ teacher_weights = {"wadv": 0.5, "wY": 1.0}
 student_weights = {"wV": 0.5, "wS": 1.0}
 
 # Initialize models
+
 csi_input_dim = 50
-input_dim = 28#最后输出长度
+input_dim = 28
+
 n_features = 1
 embedding_dim=20
 hidden_dim=10
 teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
+#添加EOS导致dim+1
 model = TeacherStudentModel(csi_input_dim,input_dim, input_dim,hidden_dim, embedding_dim).to(device)
 
 
@@ -481,7 +482,7 @@ optimizer = torch.optim.Adam(model.seq2seq.parameters(), lr=learning_rate, betas
 teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.L1Loss(reduction='sum')
-teacher_num_epochs = 10
+teacher_num_epochs = 6000
 teacher_batch_size = 50
 num_epochs = 10000
 batch_size = 50
@@ -537,6 +538,7 @@ def create_dataset(X, y, P=10):  # 设置时间窗口P=10
         targets.append(label)
 
     return torch.stack(features),torch.stack(targets) #x.size=(batchsize-P, P,feature) y.size=(batchsize-P,target)
+
 def PCA(X_arry,q):
     X_pca=[]
     for X in X_arry:
@@ -549,6 +551,7 @@ def PCA(X_arry,q):
         X_pca.append(torch.transpose(X_pca_rev,0,1))
 
     return torch.stack(X_pca)
+
 for epoch in range(num_epochs):
 
     random_indices = np.random.choice(original_length-batch_size, size=1, replace=False)
@@ -558,30 +561,49 @@ for epoch in range(num_epochs):
     f = f.view(batch_size, len(f_train[0]))
     a = a.view(batch_size, len(a_train[0]))
 
-    if (torch.cuda.is_available()):
-        a_p,f_p = create_dataset(a,f, window_size)
-        #40组(P,50),使用PCA降维到40组(1,50),获得P组内的压缩信息,用于seq2seq
-        #a_p=PCA(a_p,1).squeeze()
+
+    a_p,f_p = create_dataset(a,f, window_size)
+
+    a_p=PCA(a_p,1).squeeze() #计算P内数据的平均情况，做成类似句子的二元结构
+    a_p=a_p.unsqueeze(1)#创建(batch_size,seq_len,feature)结构
         #a_p, f_p =a,f
+
+    if (torch.cuda.is_available()):
         f_p =f_p.cuda()
         a_p = a_p.cuda()
+    total_teacher_loss = []
+    total_student_loss = []
+    total_total_loss = []
+    if epoch == 20:
+        print()
     with autocast():
         optimizer.zero_grad()
-        z, y, v, s = model(f_p, a_p)
+        pbar=tqdm(total=len(a_p))
+        for i in range(len(a_p)):#一句句训练
+            z, y, v, s = model(f_p[i], a_p[i])
 
-        teacher_loss = criterion1(y, f_p)
-        # 计算学生模型的损失
-        student_loss = 0.8 * criterion1(v, z) + criterion1(s, f_p)
+            teacher_loss = criterion1(y, f_p[i])
+            # 计算学生模型的损失
+            student_loss = 0.8 * criterion1(v, z) + criterion1(s, f_p[i])
 
-        total_loss = teacher_loss + student_loss
+            total_loss = teacher_loss + student_loss
 
-        # 计算梯度
-        total_loss.backward()
-        # 更新模型参数
-        optimizer.step()
+            # 计算梯度
+            total_loss.backward()
+            # 更新模型参数
+            optimizer.step()
+            total_teacher_loss.append(teacher_loss.item())
+            total_student_loss.append(student_loss.item())
+            total_total_loss.append(total_loss.item())
+            pbar.update(1)
+            # 打印训练信息
+        loss_t = np.mean(total_teacher_loss)
+        loss_s = np.mean(total_student_loss)
+        loss = np.mean(total_total_loss)
 
-    print(
-        f"training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {teacher_loss.item():.4f}, Student Loss: {student_loss.item():.4f}, Total Loss: {total_loss.item():.4f}")
+        print(
+            f"training:Epoch [{epoch + 1}/{num_epochs}], Teacher Loss: {loss_t.item():.4f}, Student Loss: {loss_s.item():.4f}, Total Loss: {loss.item():.4f}")
+        pbar.close()
 
 # loss_values = np.array(loss_values)   #把损失值变量保存为numpy数组
 '''
@@ -601,7 +623,7 @@ np.savetxt("./data/output/real_output_training.csv", fnp, delimiter=',')
 '''
 # 参数传递
 student_model = StudentModel(csi_input_dim, input_dim, hidden_dim,embedding_dim).to(device)
-student_model.Es.load_state_dict(model.Es.state_dict())
+student_model.seq2seq.load_state_dict(model.seq2seq.state_dict())
 student_model.Ds.load_state_dict(model.Ds.state_dict())
 # 在测试阶段只有学生模型的自编码器工作
 #student_batch_size=10
@@ -612,12 +634,20 @@ with torch.no_grad():
     #b=b.view(student_batch_size, len(b[0]))
     b= torch.from_numpy(b).float()#a
     g= torch.from_numpy(g).float()#f
+
     b, g = create_dataset(b, g, window_size)
+
+    b = PCA(b, 1).squeeze()  # 计算P内数据的平均情况，做成类似句子的二元结构
+    b = b.unsqueeze(1)  # 创建(batch_size,seq_len,feature)结构
+
     b = b.to(device)
     g = g.to(device)
-
-    r = student_model(b)
-
+    r=[]
+    #r = student_model(b)
+    for i in range(len(b)):
+        r_i = student_model(b[i])
+        r.append(r_i)
+    r=torch.stack(r)
     loss = criterion1(r, g)
     # df = pd.DataFrame(r.numpy())
     # df.to_excel("result.xls", index=False)
