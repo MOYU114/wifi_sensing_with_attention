@@ -50,7 +50,7 @@ def draw_single_pic(i,arrary,pic_name):
     #plt.show()
     plt.savefig(SAVE_PATH+pic_name)
     plt.clf()
-pics_num = 10
+pics_num = 1000
 base=0
 for i in range(base,base+pics_num):
     num=i+1

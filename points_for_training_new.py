@@ -350,9 +350,9 @@ teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
 model = TeacherStudentModel(csi_input_dim,input_dim, input_dim,hidden_dim, embedding_dim).to(device)
 
 
-CSI_PATH = "./data/inout/move/CSI_leg_right_out1.csv"
-Video_PATH = "./data/inout/move/points_legright1.csv"
-CSI_AVG_PATH = "./data/inout/move/CSI_leg_right_out1_avg.csv"
+CSI_PATH = "./data/inout/static/CSI_out_new.csv"
+Video_PATH = "./data/inout/static/point_out_new.csv"
+CSI_AVG_PATH = "./data/inout/static/CSI_out_new_avg.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
 # Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -477,11 +477,11 @@ teacher_f = teacher_f.reshape(len(teacher_f), -1)
 # 5. 在变化不大的素材里，过多的使用注意力机制会导致输出结果趋于一个取平均的状态
 '''
 
-optimizer = torch.optim.Adam(model.seq2seq.parameters(), lr=learning_rate, betas=(beta1, beta2))
+optimizer = torch.optim.Adam(model.Es.parameters(), lr=learning_rate, betas=(beta1, beta2))
 teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.L1Loss(reduction='sum')
-teacher_num_epochs = 10
+teacher_num_epochs = 4000
 teacher_batch_size = 50
 num_epochs = 10000
 batch_size = 50

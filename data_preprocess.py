@@ -2,23 +2,27 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 training = False
-'''
+
 # 读取前八个csv文件
-files = ['CSI_wave_left1.csv', 'CSI_wave_left2.csv', 'CSI_wave_right1.csv', 'CSI_wave_right2.csv','CSI_leg1.csv', 'CSI_leg2.csv', 'CSI_stand1.csv', 'CSI_stand2.csv' ]
-data = [pd.read_csv(f'./data/static data/{file}', header=None) for file in files]
+files = ['wave_left_in1.csv', 'wave_left_in2.csv', 'wave_left_in3.csv',
+        'wave_right_in1.csv', 'wave_right_in2.csv', 'wave_right_in3.csv',
+        'leg_in1.csv', 'leg_in2.csv', 'leg_in3.csv',
+        'stand_in1.csv', 'stand_in2.csv', 'stand_in3.csv'
+          ]
+data = [pd.read_csv(f'./data/inout/static/{file}', header=None) for file in files]
 
 # 读取point_left_right_leg_stand.csv文件中的四行信息
-point_data = pd.read_csv('./data/static data/point_left_right_leg_stand.csv', header=None)
+point_data = pd.read_csv('./data/inout/static/points_left_right_leg_stand.csv', header=None)
 
 # 创建新的csv文件point_new.csv
-with open('./data/static data/point_new.csv', 'w') as f:
+with open('./data/inout/static/point_in_new.csv', 'w') as f:
     for i in range(4):
         row = point_data.iloc[i]
         row_str = ','.join(map(lambda x: f'{x:.2e}', row)) + '\n'
-        f.write(row_str * (len(data[i*2]) + len(data[i*2+1])))
+        f.write(row_str * (len(data[i*3]) + len(data[i*3+1])+ len(data[i*3+2])))
 
 # 合并前八个csv文件为CSI_new.csv
-pd.concat(data).to_csv('./data/static data/CSI_new.csv', index=False)
+pd.concat(data).to_csv('./data/inout/static/CSI_in_new.csv', index=False)
 
 #图像处理
 '''
@@ -71,6 +75,6 @@ data = [pd.read_csv(f'./data/static data/{file}', header=None) for file in files
 for i in range(4):
     for j in range(len(data[i * 2]) + len(data[i * 2 + 1])):
         draw_single_pic(i,data_img,"img"+str(i)+"_"+str(j)+".png")
-
+'''
 
 
