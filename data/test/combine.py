@@ -5,7 +5,7 @@ import csv
 folder_path = os.getcwd()
 
 # 指定输出文件名
-output_file = "points_in.csv"
+output_file = "points_syn.csv"
 
 # 获取文件夹中所有的 CSV 文件名
 csv_files = [file for file in os.listdir(folder_path) if file.endswith(".csv")]

@@ -375,8 +375,8 @@ def group_list(frame_value):
             continue
         
     length_min = min(len(wave_index),len(leg_index),len(stand_index))
-    leg_index = leg_index[0:length_min]
-    wave_index = wave_index[0:length_min]
+    leg_index = leg_index[0:length_min*8]
+    wave_index = wave_index[0:length_min*8]
     stand_index = stand_index[0:length_min]
     merged_index = leg_index + wave_index + stand_index
     return merged_index
@@ -389,8 +389,8 @@ dv_output_dim = 28
 
 #points_in的准确率有60左右
 
-CSI_PATH = "./data/CSI_in.csv"
-Video_PATH = "./data/points_in.csv"
+CSI_PATH = "./data/CSI_new_in.csv"
+Video_PATH = "./data/points_new_inout.csv"
 CSI_test = "./data/CSI_test_legwave_25.csv"
 Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -408,9 +408,9 @@ bb = reshape_and_average(aa)                        #把多个CSI数据包平均
 Video_train = ff.values.astype('float32')
 CSI_train = bb.values.astype('float32')
 
-# merged_index = group_list(Video_train)
-# Video_train = Video_train[merged_index,:]
-# CSI_train = CSI_train[merged_index,:]
+merged_index = group_list(Video_train)
+Video_train = Video_train[merged_index,:]
+CSI_train = CSI_train[merged_index,:]
 
 CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量

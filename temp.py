@@ -200,11 +200,11 @@ def group_list(frame_value):
         else:
             continue
         
-    length_min = min(len(wave_index),len(leg_index),len(stand_index))
-    leg_index = leg_index[0:length_min]
-    wave_index = wave_index[0:length_min]
+    length_min = min(len(leg_index),len(stand_index))#len(wave_index),
+    leg_index = leg_index[0:length_min*6]
+    wave_index = wave_index[0:length_min*4]
     stand_index = stand_index[0:length_min]
-    merged_index = leg_index + wave_index + stand_index
+    merged_index = leg_index + stand_index + wave_index
     return merged_index
 
 
@@ -226,8 +226,8 @@ teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
 model = TeacherStudentModel(csi_input_dim,input_dim, embedding_dim, input_dim).to(device)
 
 #points_in的准确率有80左右，merged只有64
-CSI_PATH = "./data/CSI_in_leg1.csv"
-Video_PATH = "./data/points_legin1.csv"
+CSI_PATH = "./data/CSI_in_syn.csv"
+Video_PATH = "./data/points_syn.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
 # Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -292,6 +292,7 @@ def fillna_with_previous_values(s):
 #         data1 = list(csvreader)  # 将读取的数据转换为列表
 #     bb = pd.DataFrame(data1)
 bb = reshape_and_average(aa)
+# bb = bb.iloc[:,0:25]
 Video_train = ff.values.astype('float32')  # 共990行，每行28个数据，为关键点坐标，按照xi，yi排序
 CSI_train = bb.values.astype('float32')
 
@@ -363,9 +364,9 @@ optimizer = torch.optim.Adam(model.Es.parameters(), lr=learning_rate, betas=(bet
 teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.L1Loss(reduction='sum')
-teacher_num_epochs = 1000
+teacher_num_epochs = 300
 teacher_batch_size = 128
-num_epochs = 2000
+num_epochs = 1000
 batch_size = 128
 #teacher_training
 for epoch in range(teacher_num_epochs):
@@ -471,4 +472,19 @@ with torch.no_grad():
     np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
     np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
 
-# '''
+# # 计算正样本和负样本的输出
+# output1, output2 = model(x1, x2)
+# output1, output3 = model(x1, x3)
+
+# # 计算欧氏距离损失
+# euclidean_distance = F.pairwise_distance(output1, output2)
+# print("正样本距离:", euclidean_distance.item())
+
+# euclidean_distance = F.pairwise_distance(output1, output3)
+# print("负样本距离:", euclidean_distance.item())
+
+# # 计算对比损失
+# margin = 1.0  # 对比损失的边界
+# loss_contrastive = torch.mean((1 - F.cosine_similarity(output1, output2)) +
+#                               (F.relu(margin - F.cosine_similarity(output1, output3))))
+# print("对比损失:", loss_contrastive.item())
