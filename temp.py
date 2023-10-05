@@ -226,8 +226,8 @@ teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
 model = TeacherStudentModel(csi_input_dim,input_dim, embedding_dim, input_dim).to(device)
 
 #points_in的准确率有80左右，merged只有64
-CSI_PATH = "./data/CSI_in_syn.csv"
-Video_PATH = "./data/points_syn.csv"
+CSI_PATH = "./data/CSI_out_static_wden2.csv"
+Video_PATH = "./data/points_static.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
 # Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -364,9 +364,9 @@ optimizer = torch.optim.Adam(model.Es.parameters(), lr=learning_rate, betas=(bet
 teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.L1Loss(reduction='sum')
-teacher_num_epochs = 300
+teacher_num_epochs = 1500
 teacher_batch_size = 128
-num_epochs = 1000
+num_epochs = 2000
 batch_size = 128
 #teacher_training
 for epoch in range(teacher_num_epochs):
@@ -488,3 +488,4 @@ with torch.no_grad():
 # loss_contrastive = torch.mean((1 - F.cosine_similarity(output1, output2)) +
 #                               (F.relu(margin - F.cosine_similarity(output1, output3))))
 # print("对比损失:", loss_contrastive.item())
+

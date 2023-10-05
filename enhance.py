@@ -89,8 +89,8 @@ class DecoderDs(nn.Module):
 class StudentModel(nn.Module):
     def __init__(self, dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim):
         super(StudentModel, self).__init__()
-        self.student_encoder_es = EncoderEs(es_input_dim, es_hidden_dim, ev_latent_dim).float()
-        self.student_decoder_ds = DecoderDs(ev_latent_dim, dv_output_dim).float()
+        self.student_encoder_es = EncoderEv(es_input_dim, es_hidden_dim, ev_latent_dim).float()
+        self.student_decoder_ds = DecoderDv(ev_latent_dim, dv_output_dim).float()
 
     def forward(self, re, fa):
         s = self.student_encoder_es(re)
@@ -128,8 +128,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.5, 0.999))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCEWithLogitsLoss()
 
-path_in = "./data/inout/CSI_wave_in_2m2.csv"
-path_out = "./data/inout/CSI_wave_out_2m2.csv"
+path_in = "./data/inout/CSI_leg_right_in1.csv"
+path_out = "./data/inout/CSI_leg_right_out1.csv"
 
 with open(path_in, "r") as csvfile:
     csvreader = csv.reader(csvfile)

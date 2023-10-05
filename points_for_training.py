@@ -305,8 +305,8 @@ class TeacherModel_G(nn.Module):
         self.selayer = SELayer(ev_latent_dim).double()
     def forward(self, f):
         z = self.teacher_encoder_ev(f)
-        # z_atti = self.selayer(z)
-        y = self.teacher_decoder_dv(z)
+        z_atti = self.selayer(z)
+        y = self.teacher_decoder_dv(z_atti)
 
         return y
 class TeacherModel_D(nn.Module):
@@ -389,8 +389,8 @@ dv_output_dim = 28
 
 #points_in的准确率有60左右
 
-CSI_PATH = "./data/CSI_new_in.csv"
-Video_PATH = "./data/points_new_inout.csv"
+CSI_PATH = "./data/CSI_out_static.csv"
+Video_PATH = "./data/points_static.csv"
 CSI_test = "./data/CSI_test_legwave_25.csv"
 Video_test = "./data/points_test_legwave.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
@@ -404,13 +404,13 @@ aa = pd.DataFrame(data1)                             #读取CSI数据到aa
 ff = pd.read_csv(Video_PATH, header=None)            #读取骨架关节点数据到ff
 print("data has loaded.")
 
-bb = reshape_and_average(aa)                        #把多个CSI数据包平均为一个数据包，使一帧对应一个CSI数据包
+bb = reshape_and_average(aa)                #把多个CSI数据包平均为一个数据包，使一帧对应一个CSI数据包
 Video_train = ff.values.astype('float32')
 CSI_train = bb.values.astype('float32')
 
-merged_index = group_list(Video_train)
-Video_train = Video_train[merged_index,:]
-CSI_train = CSI_train[merged_index,:]
+# merged_index = group_list(Video_train)
+# Video_train = Video_train[merged_index,:]
+# CSI_train = CSI_train[merged_index,:]
 
 CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
@@ -470,7 +470,7 @@ teacher_model_D.apply(weights_init)
 # print(discriminator)
 
 torch.autograd.set_detect_anomaly(True)
-Teacher_num_epochs = 1000
+Teacher_num_epochs = 2000
 teacher_batch_size = 128
 for epoch in range(Teacher_num_epochs):
     random_indices = np.random.choice(original_length, size=teacher_batch_size, replace=False)
@@ -644,7 +644,7 @@ model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discrimina
 # 4. 教师模型和学生模型中都使用selayer似乎效果不错。
 # 5. 在变化不大的素材里，过多的使用注意力机制会导致输出结果趋于一个取平均的状态
 
-num_epochs =1000
+num_epochs =2500
 batch_size = 128
 # arr_loss = np.
 # 开始打印discrimination的参数
@@ -701,7 +701,8 @@ for epoch in range(num_epochs):
 
 
     # 计算学生模型的损失
-    student_loss =0.5 *criterion1(v, z) +criterion1(s, y)
+    # student_loss =0.5 *criterion1(v, z) + criterion1(s, y)
+    student_loss =criterion1(s, y)
 
     total_loss = teacher_loss + student_loss
     # optimizer.zero_grad()
@@ -752,5 +753,24 @@ with torch.no_grad():
     rnp = r.numpy()
     np.savetxt(Video_OUTPUT_PATH, gnp, delimiter=',')
     np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
+    
+# 测试数据
+# CSI_test = "./data/loc/wave_right_out_loc42.csv"
+# with open(CSI_test, "r", encoding='utf-8-sig') as csvfile:
+#     csvreader = csv.reader(csvfile)
+#     data1 = list(csvreader)  # 将读取的数据转换为列表
+# aa = pd.DataFrame(data1)
+# bb = reshape_and_average(aa)
+# CSI_train = bb.values.astype('float32')
+# CSI_train = CSI_train / np.max(CSI_train)
+# with torch.no_grad():
+#     b= torch.from_numpy(CSI_train).double()
+#     b = b.view(len(b),int(len(b[0])/10),10)
+#     b = b.to(device)
+#     r = student_model(b)
+#     r = r.view(np.size(r, 0), np.size(r, 1))
+#     r = r.cpu()
+#     rnp = r.numpy()
+#     np.savetxt(CSI_OUTPUT_PATH, rnp, delimiter=',')
     
 
