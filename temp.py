@@ -103,6 +103,26 @@ class EncoderEs(nn.Module):
     def forward(self, x):
         x = self.L3(x)
         return x
+    
+# class EncoderEs(nn.Module):
+#     def __init__(self, embedding_dim=7, csi_input_dim=50):
+#         super(EncoderEs, self).__init__()
+#         self.gru=nn.GRU(csi_input_dim, 25, num_layers=1,batch_first=True)
+#         self.relu=nn.LeakyReLU()
+#         self.L3 = nn.Sequential(
+#             nn.Linear(25, embedding_dim),
+#             nn.LeakyReLU(),
+#         )
+
+#     def forward(self, x):
+#         output, h = self.gru(x)
+#         h = h[-1]
+#         h=self.relu(h)
+#         v = self.L3(h)
+#         v = v.squeeze()
+#         return v
+# D:\anaconda3\lib\site-packages\torch\nn\modules\loss.py:536: UserWarning: Using a target size (torch.Size([2880, 28])) that is different to the input size (torch.Size([28])). This will likely lead to incorrect results due to broadcasting. Please ensure they have the same size.
+#   return F.mse_loss(input, target, reduction=self.reduction)
 
 
 # 换种思路，不是填充长度，而是求平均值，把每行n个50变成一个50，对应video的每一帧points
@@ -226,7 +246,7 @@ teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
 model = TeacherStudentModel(csi_input_dim,input_dim, embedding_dim, input_dim).to(device)
 
 #points_in的准确率有80左右，merged只有64
-CSI_PATH = "./data/CSI_out_static_wden2.csv"
+CSI_PATH = "./data/CSI_out_static.csv"
 Video_PATH = "./data/points_static.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
 # Video_test = "./data/points_test_legwave.csv"
@@ -364,9 +384,9 @@ optimizer = torch.optim.Adam(model.Es.parameters(), lr=learning_rate, betas=(bet
 teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.L1Loss(reduction='sum')
-teacher_num_epochs = 1500
+teacher_num_epochs = 2500
 teacher_batch_size = 128
-num_epochs = 2000
+num_epochs = 3000
 batch_size = 128
 #teacher_training
 for epoch in range(teacher_num_epochs):

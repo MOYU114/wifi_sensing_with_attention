@@ -350,8 +350,8 @@ teacher_model= TeacherModel(input_dim, input_dim, embedding_dim).to(device)
 model = TeacherStudentModel(csi_input_dim,input_dim, input_dim,hidden_dim, embedding_dim).to(device)
 
 
-CSI_PATH = "./data/inout/static/CSI_out_new.csv"
-Video_PATH = "./data/inout/static/point_out_new.csv"
+CSI_PATH = "./data/CSI_out_static.csv"
+Video_PATH = "./data/points_static.csv"
 CSI_AVG_PATH = "./data/inout/static/CSI_out_new_avg.csv"
 # CSI_test = "./data/CSI_test_legwave_25.csv"
 # Video_test = "./data/points_test_legwave.csv"
@@ -481,9 +481,9 @@ optimizer = torch.optim.Adam(model.Es.parameters(), lr=learning_rate, betas=(bet
 teacher_optimizer = torch.optim.Adam(teacher_model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.L1Loss(reduction='sum')
-teacher_num_epochs = 4000
+teacher_num_epochs = 2000
 teacher_batch_size = 50
-num_epochs = 10000
+num_epochs = 1000
 batch_size = 50
 #teacher_training
 for epoch in range(teacher_num_epochs):
@@ -558,8 +558,8 @@ for epoch in range(num_epochs):
     f = f.view(batch_size, len(f_train[0]))
     a = a.view(batch_size, len(a_train[0]))
 
+    a_p,f_p = create_dataset(a,f, window_size)
     if (torch.cuda.is_available()):
-        a_p,f_p = create_dataset(a,f, window_size)
         #40组(P,50),使用PCA降维到40组(1,50),获得P组内的压缩信息,用于seq2seq
         #a_p=PCA(a_p,1).squeeze()
         #a_p, f_p =a,f

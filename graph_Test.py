@@ -11,7 +11,7 @@ Video_OUTPUT_TRAINING_PATH="./data/output/points_merged_output_training.csv"
 if training:
     CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_TRAINING_PATH, header=None)
     Video_OUTPUT = pd.read_csv(Video_OUTPUT_TRAINING_PATH, header=None)
-    SAVE_PATH = "./data/output/photo/training/"
+    SAVE_PATH = "./data/output/photo/test/"
 else:
     CSI_OUTPUT = pd.read_csv(CSI_OUTPUT_PATH, header=None)
     Video_OUTPUT = pd.read_csv(Video_OUTPUT_PATH, header=None)
@@ -48,8 +48,8 @@ def draw_single_pic(i,arrary,pic_name):
     plt.plot([x[11], x[12]], [y[11], y[12]])
     plt.plot([x[12], x[13]], [y[12], y[13]])
     plt.show()
-    # plt.savefig(SAVE_PATH+pic_name)
-    # plt.clf()
+    plt.savefig(SAVE_PATH+pic_name)
+    plt.clf()
 pics_num = 40
 base=0
 for i in range(base,base+pics_num):

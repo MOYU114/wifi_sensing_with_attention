@@ -34,7 +34,7 @@ class DecoderDv(nn.Module):
             nn.Linear(embedding_dim, 25),
             nn.LeakyReLU(),
             nn.Linear(25, output_dim),
-            nn.Sigmoid()
+            nn.Sigmoid() #？
         )
 
     def forward(self, x):
@@ -45,11 +45,12 @@ class DecoderDv(nn.Module):
 class TeacherModel(nn.Module):
     def __init__(self, input_dim,  output_dim, embedding_dim=64):
         super(TeacherModel, self).__init__()
-        self.Ev = EncoderEv(embedding_dim, input_dim)
+        self.EvIn = EncoderEv(embedding_dim, input_dim)
+        self.Evout = EncoderEv(embedding_dim, input_dim)
         self.Dv = DecoderDv(embedding_dim, output_dim)
     def forward(self,r,f):
-        s = self.Ev(r)
-        z = self.Ev(f)
+        s = self.EvIn(r)
+        z = self.EvOut(f)
         y = self.Dv(z)
         return s,z,y
 
@@ -184,7 +185,7 @@ for epoch in range(num_epochs):
     #         else:
     #             raise exception
      
-    loss_latent = criterion1(real_latent, fake_latent)
+    loss_latent = criterion1(real_latent, fake_latent) #In和out分别使用一个编码器，避免数据分布的不同干扰编码器。
     loss_gen = criterion1(raw_re, fake)
     loss_total = loss_latent + loss_gen
     

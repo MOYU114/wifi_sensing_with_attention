@@ -110,7 +110,7 @@ class DiscriminatorC(nn.Module):
 class EncoderEs(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super(EncoderEs, self).__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=1, batch_first=True)
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=2, batch_first=True)
         self.conv = nn.Conv2d(hidden_dim, latent_dim, kernel_size=3, stride=1, padding=1)
         self.relu = nn.ReLU()
     def forward(self, x):
@@ -492,22 +492,22 @@ for epoch in range(Teacher_num_epochs):
     # 进行对抗学习
     optimizer_D.zero_grad()
     
-    # real_labels = torch.ones(teacher_batch_size, 1).double()
-    # fake_labels = torch.zeros(teacher_batch_size, 1).double()
+    real_labels = torch.ones(teacher_batch_size, 1).double()
+    fake_labels = torch.zeros(teacher_batch_size, 1).double()
     
     real_target = teacher_model_D.teacher_discriminator_c(f)
     real_target = real_target.view(teacher_batch_size,1)
-    # real_loss = criterion(real_target, real_labels)
+    real_loss = criterion(real_target, real_labels)
     
     fake_target = teacher_model_D.teacher_discriminator_c(y)
     fake_target = fake_target.view(teacher_batch_size,1)
-    # fake_loss=criterion(fake_target, fake_labels) #+ 1e-6 #防止log0导致结果为-inf
+    fake_loss=criterion(fake_target, fake_labels) #+ 1e-6 #防止log0导致结果为-inf
     
     eps = 1e-8#平滑值，防止出现log0
-    teacher_loss = torch.mean(torch.abs(real_target.mean(0) - fake_target.mean(0)))
+    # teacher_loss = torch.mean(torch.abs(real_target.mean(0) - fake_target.mean(0)))
     # teacher_loss = -torch.mean(torch.log(real_target + eps) + torch.log(1 - fake_target + eps))
     
-    # teacher_loss = - real_loss + fake_loss
+    teacher_loss = real_loss + fake_loss
     
     #训练鉴别器
     teacher_loss.backward(retain_graph=True)
@@ -644,7 +644,7 @@ model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discrimina
 # 4. 教师模型和学生模型中都使用selayer似乎效果不错。
 # 5. 在变化不大的素材里，过多的使用注意力机制会导致输出结果趋于一个取平均的状态
 
-num_epochs =2500
+num_epochs =1500
 batch_size = 128
 # arr_loss = np.
 # 开始打印discrimination的参数
@@ -652,11 +652,13 @@ for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
     f = torch.from_numpy(f_train[random_indices, :]).double()
     a = torch.from_numpy(a_train[random_indices, :]).double()
-    f = f.view(batch_size, 28, 1, 1)  # .shape(batch_size,28,1,1)
+    f = f.view(batch_size, 28, 1, 1)
     a = a.view(batch_size, int(len(a_train[0]) / 10), 10)
 
     optimizer.zero_grad()
+    # f是来自视频帧的Ground Truth，a是幅值帧，z是视频帧embedding，y是视频帧的fake骨架图，v是幅值帧的embedding，s是幅值帧的synthetic骨架帧
     z, y, v, s = model(f, a)
+    # 视频编码器似乎也可以不更新
 
     # if (torch.cuda.is_available()):
     #     f = f.cuda()
@@ -702,7 +704,7 @@ for epoch in range(num_epochs):
 
     # 计算学生模型的损失
     # student_loss =0.5 *criterion1(v, z) + criterion1(s, y)
-    student_loss =criterion1(s, y)
+    student_loss =criterion1(s, f) + criterion1(v, z)
 
     total_loss = teacher_loss + student_loss
     # optimizer.zero_grad()

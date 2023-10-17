@@ -7,6 +7,7 @@ Created on Fri May  5 15:35:31 2023
 import os
 import json
 import numpy as np
+import matplotlib.pyplot as plt
 
 def AnalysisJson():
     file_path = "E:\\openpose\\openpose1\\output\\test\\" #一个视频经过OpenPose处理后，每一帧的人体骨架点JSON数据所在文件夹
@@ -37,6 +38,8 @@ def AnalysisJson():
     k14_p2 = points[0:800,9:15,0:2]
     k14 = np.concatenate((k14_p1, k14_p2), axis=1)
     
+    return points, k14
+    
 # 本方案中14个点分别表示的内容，跟OpenPose的稍微不一样，我们取的是它25个点中的第0,1,2,3,4,5,6,7,9,10,11,12,13,14这14个点。    
 #     {0,  "Nose"}
 #     {1,  "Neck"}
@@ -57,11 +60,83 @@ def AnalysisJson():
 
 
     
-    OutTextPath = "E:\\openpose\\openpose1\\output\\test\\points_test.csv"
-    np.savetxt(OutTextPath, k14.reshape(len(k14),-1),delimiter=',')
+    # OutTextPath = "E:\\openpose\\openpose1\\output\\test\\points_test.csv"
+    # np.savetxt(OutTextPath, k14.reshape(len(k14),-1),delimiter=',')
+
+def draw_single_pic25(i,arrary,pic_name):
+    points_num = len(arrary[0])
+    x=[]
+    y=[]
+    colors = np.array(["red","red","orange","yellow","yellow", "green","green","green","red","cyan","cyan", "cyan", "blue","blue","blue","pink","purple","pink","purple","blue","blue","blue","cyan","cyan","cyan" ])
+    for j in range(points_num):
+        x.append(arrary[i][j][0])
+        y.append(arrary[i][j][1])
+    #绘制点
+    plt.scatter(x, y,c = colors)
+    plt.gca().invert_yaxis()
+    #链接边
+    plt.plot([x[0], x[1]], [y[0], y[1]])
+    plt.plot([x[0], x[15]], [y[0], y[15]])
+    plt.plot([x[15], x[17]], [y[15], y[17]])
+    plt.plot([x[0], x[16]], [y[0], y[16]])
+    plt.plot([x[16], x[18]], [y[16], y[18]])
+    plt.plot([x[1], x[2]], [y[1], y[2]])
+    plt.plot([x[2], x[3]], [y[2], y[3]])
+    plt.plot([x[3], x[4]], [y[3], y[4]])
+    plt.plot([x[1], x[5]], [y[1], y[5]])
+    plt.plot([x[5], x[6]], [y[5], y[6]])
+    plt.plot([x[6], x[7]], [y[6], y[7]])
+    plt.plot([x[1], x[8]], [y[1], y[8]])
+    plt.plot([x[8], x[9]], [y[8], y[9]])
+    plt.plot([x[9], x[10]], [y[9], y[10]])
+    plt.plot([x[10], x[11]], [y[10], y[11]])
+    plt.plot([x[11], x[22]], [y[11], y[22]])
+    plt.plot([x[11], x[24]], [y[11], y[24]])
+    plt.plot([x[22], x[23]], [y[22], y[23]])
+    plt.plot([x[8], x[12]], [y[8], y[12]])
+    plt.plot([x[13], x[14]], [y[13], y[14]])
+    plt.plot([x[12], x[13]], [y[12], y[13]])
+    plt.plot([x[14], x[21]], [y[14], y[21]])
+    plt.plot([x[14], x[19]], [y[14], y[19]])
+    plt.plot([x[19], x[20]], [y[19], y[20]])
+    plt.savefig("./data/output/photo/point25.pdf")
+    plt.show()
+    plt.clf()
+    
+def draw_single_pic(i,arrary,pic_name):
+    points_num = len(arrary[0])
+    x=[]
+    y=[]
+    colors = np.array(["red","red", "green","green","green","orange","orange","orange", "purple", "purple","purple","cyan","cyan","cyan" ])
+    for j in range(points_num):
+        x.append(arrary[i][j][0])
+        y.append(arrary[i][j][1])
+    #绘制点
+    plt.scatter(x, y,c = colors)
+    plt.gca().invert_yaxis()
+    #链接边
+    plt.plot([x[0], x[1]], [y[0], y[1]])
+    plt.plot([x[1], x[2]], [y[1], y[2]])
+    plt.plot([x[2], x[3]], [y[2], y[3]])
+    plt.plot([x[3], x[4]], [y[3], y[4]])
+    plt.plot([x[1], x[5]], [y[1], y[5]])
+    plt.plot([x[5], x[6]], [y[5], y[6]])
+    plt.plot([x[6], x[7]], [y[6], y[7]])
+    plt.plot([x[1], x[8]], [y[1], y[8]])
+    plt.plot([x[8], x[9]], [y[8], y[9]])
+    plt.plot([x[9], x[10]], [y[9], y[10]])
+    plt.plot([x[1], x[11]], [y[1], y[11]])
+    plt.plot([x[11], x[12]], [y[11], y[12]])
+    plt.plot([x[12], x[13]], [y[12], y[13]])
+    plt.savefig("./data/output/photo/point14.pdf", format="pdf")
+    plt.show()
+    plt.clf()
     
 if __name__ == '__main__':
-    AnalysisJson()
+    po25,po14 = AnalysisJson()
+    draw_single_pic25(247,po25,"CSI_OUTPUT")
+    draw_single_pic(247,po14,"CSI_OUTPUT")
+    
 
 
             # for i in base.values():
