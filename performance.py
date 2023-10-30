@@ -51,7 +51,7 @@ def PCS(CSI_OUTPUT,Video_OUTPUT,phi):
     return 1-pcs_avg#得到正确点的占比
 #phi为阈值，其的设置是用来规定两个坐标点的欧拉距离应该要低于多少(一般点距离都在0.1以下)
 #阈值应该根据具体情况设置
-print(f"PCS◦25={PCS(CSI_OUTPUT,Video_OUTPUT,0.025)}")
-print(f"PCS◦30={PCS(CSI_OUTPUT,Video_OUTPUT,0.030)}")
-print(f"PCS◦40={PCS(CSI_OUTPUT,Video_OUTPUT,0.040)}")
-print(f"PCS◦50={PCS(CSI_OUTPUT,Video_OUTPUT,0.050)}")
+print(f"PCS 25={PCS(CSI_OUTPUT,Video_OUTPUT,0.025)}")
+print(f"PCS 30={PCS(CSI_OUTPUT,Video_OUTPUT,0.030)}")
+print(f"PCS 40={PCS(CSI_OUTPUT,Video_OUTPUT,0.040)}")
+print(f"PCS 50={PCS(CSI_OUTPUT,Video_OUTPUT,0.050)}")
