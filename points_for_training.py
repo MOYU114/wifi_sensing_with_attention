@@ -250,6 +250,17 @@ class SELayer(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)  # 对应Excitation操作
         return x * y.expand_as(x)
 
+class evmodel(nn.Module):
+    def __init__(self, ev_input_dim):
+        super(evmodel, self).__init__()
+        self.encoderev = EncoderEv(ev_input_dim).double()
+        self.selayer = SELayer(ev_latent_dim).double()
+        
+    def forward(self, f):
+        z = self.encoderev(f)
+        z_atti = self.selayer(z)
+        return z_atti
+        
 
 class TeacherStudentModel(nn.Module):
     def __init__(self, ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim):
@@ -358,6 +369,33 @@ def fillna_with_previous_values(s):
     s.iloc[nan_indices] = fill_values
     return s
 
+#把静止的数据的某一类提取复制出对应数目的静态骨架帧
+def gene_static(index,num):
+    raw_data_file = "./data/static/points_left_right_leg_stand_sit.csv"
+    raw_data = pd.read_csv(raw_data_file, header=None)
+    
+    if index == 1:
+        arm_left = raw_data.iloc[0]
+        arm_left_data = pd.DataFrame(np.tile(arm_left, (num, 1)))
+        return arm_left_data
+    elif index == 2:
+        arm_right = raw_data.iloc[1]
+        arm_right_data = pd.DataFrame(np.tile(arm_right, (num, 1)))
+        return arm_right_data
+    elif index == 3:
+        leg = raw_data.iloc[2]
+        leg_data = pd.DataFrame(np.tile(leg, (num, 1)))
+        return leg_data
+    elif index == 4:
+        leg = raw_data.iloc[3]
+        leg_data = pd.DataFrame(np.tile(leg, (num, 1)))
+        return leg_data
+    else:
+        stand = raw_data.iloc[4]
+        stand_data = pd.DataFrame(np.tile(stand, (num, 1)))
+        # stand_data.to_csv('temp.csv', index=False) %把数据存储到csv文件
+        return stand_data
+
 # 通过关节点的制约关系得到wave，leg和stand的索引，然后返回相同数量的三种类别的索引
 def group_list(frame_value):
     leg_index = []
@@ -391,8 +429,8 @@ dv_output_dim = 28
 
 CSI_PATH = "./data/CSI_out_static.csv"
 Video_PATH = "./data/points_static.csv"
-CSI_test = "./data/CSI_test_legwave_25.csv"
-Video_test = "./data/points_test_legwave.csv"
+CSI_test = "./data/static/CSI_wave_left1.csv"
+Video_test = "./data/static/points_arm_left.csv"
 CSI_OUTPUT_PATH = "./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH = "./data/output/points_merged_output.csv"
 
@@ -414,7 +452,7 @@ CSI_train = bb.values.astype('float32')
 
 CSI_train = CSI_train / np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train), 14, 2)  # 分成990组14*2(x,y)的向量
-Video_train = Video_train / [1280, 720]            #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
+Video_train = Video_train / [1280, 720]        #输入的图像帧是1280×720的，所以分别除以1280和720归一化。
 Video_train = Video_train.reshape(len(Video_train), -1)
 
 data = np.hstack((Video_train, CSI_train))
@@ -431,11 +469,28 @@ a_train = data[0:train_data_length, 28:78]
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
 
-# 剩余作为测试
-g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
-b = torch.from_numpy(data[train_data_length:data_length,28:78]).double()
-b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+with open(CSI_test, "r") as csvfilee:
+    csvreadere = csv.reader(csvfilee)
+    data2 = list(csvreadere)  # 将读取的数据转换为列表
+csi_test = pd.DataFrame(data2)
+video_test = pd.read_csv(Video_test, header=None)
 
+test_bb = reshape_and_average(csi_test)
+test_bb = test_bb.values.astype('float32')
+video_test = video_test.values.astype('float32')
+
+csi_test = test_bb / np.max(test_bb)
+video_test = video_test.reshape(len(video_test), 14, 2)
+video_test = video_test / [1280, 720]
+video_test = video_test.reshape(len(video_test), -1)
+
+g = torch.from_numpy(video_test).double()
+b = torch.from_numpy(csi_test).double()
+b = b.view(len(b),int(len(a_train[0])/10),10)
+# 剩余作为测试
+# g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
+# b = torch.from_numpy(data[train_data_length:data_length,28:78]).double()
+# b = b.view(len(b),int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
 
 # 记录损失值
 # loss_values = []
@@ -542,11 +597,13 @@ student_weights = {"wV": 0.5, "wS": 1.0}
 # 所有参数进行grid-search.
 
 model = TeacherStudentModel(ev_input_dim, ev_latent_dim, es_input_dim, es_hidden_dim, dv_output_dim).to(device)
+model_ev = evmodel(ev_input_dim).to(device)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(beta1, beta2))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCELoss()
 
+# model_ev.encoderev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
 model.teacher_encoder_ev.load_state_dict(teacher_model_G.teacher_encoder_ev.state_dict())
 model.teacher_decoder_dv.load_state_dict(teacher_model_G.teacher_decoder_dv.state_dict())
 model.teacher_discriminator_c.load_state_dict(teacher_model_D.teacher_discriminator_c.state_dict())
@@ -657,6 +714,7 @@ for epoch in range(num_epochs):
 
     optimizer.zero_grad()
     # f是来自视频帧的Ground Truth，a是幅值帧，z是视频帧embedding，y是视频帧的fake骨架图，v是幅值帧的embedding，s是幅值帧的synthetic骨架帧
+    # z = model_ev(f)
     z, y, v, s = model(f, a)
     # 视频编码器似乎也可以不更新
 
