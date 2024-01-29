@@ -9,8 +9,9 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 
-def AnalysisJson():
-    file_path = "E:\\openpose\\openpose1\\output\\test\\" #一个视频经过OpenPose处理后，每一帧的人体骨架点JSON数据所在文件夹
+def AnalysisJson(path):
+    #一个视频经过OpenPose处理后，每一帧的人体骨架点JSON数据所在文件夹
+    file_path = "data\\static\\datawall\\" + path + "\\"
     files = os.listdir(file_path)  # 遍历file_path下所有的子目录及文件
     points = np.zeros((len(files),75))
     i = 0
@@ -34,11 +35,11 @@ def AnalysisJson():
             i = i+1
             #temp["data"]     # 因为此时已经转换为了字典类型，对key(data) 取值后可以得到每天的具体空气数据的value值
     points = points.reshape(len(points),25,3)   
-    k14_p1 = points[0:800,0:8,0:2]
-    k14_p2 = points[0:800,9:15,0:2]
+    k14_p1 = points[40:1240,0:8,0:2]
+    k14_p2 = points[40:1240,9:15,0:2]
     k14 = np.concatenate((k14_p1, k14_p2), axis=1)
     
-    return points, k14
+    # return points, k14
     
 # 本方案中14个点分别表示的内容，跟OpenPose的稍微不一样，我们取的是它25个点中的第0,1,2,3,4,5,6,7,9,10,11,12,13,14这14个点。    
 #     {0,  "Nose"}
@@ -60,8 +61,8 @@ def AnalysisJson():
 
 
     
-    # OutTextPath = "E:\\openpose\\openpose1\\output\\test\\points_test.csv"
-    # np.savetxt(OutTextPath, k14.reshape(len(k14),-1),delimiter=',')
+    OutTextPath = "data\\static\\datawall\\" + path + ".csv"
+    np.savetxt(OutTextPath, k14.reshape(len(k14),-1),delimiter=',')
 
 def draw_single_pic25(i,arrary,pic_name):
     points_num = len(arrary[0])
@@ -133,9 +134,45 @@ def draw_single_pic(i,arrary,pic_name):
     plt.clf()
     
 if __name__ == '__main__':
-    po25,po14 = AnalysisJson()
-    draw_single_pic25(247,po25,"CSI_OUTPUT")
-    draw_single_pic(247,po14,"CSI_OUTPUT")
+    AnalysisJson("wave_right_6C")
+    # for i in range(15):
+    #     if i == 0:
+    #         AnalysisJson("arm_left_c109")
+    #     elif i == 1:
+    #         AnalysisJson("arm_right")
+    #     elif i == 2:
+    #         AnalysisJson("arm_right_c109")
+    #     elif i == 3:
+    #         AnalysisJson("leg")
+    #     elif i == 4:
+    #         AnalysisJson("leg_c109")
+    #     elif i == 5:
+    #         AnalysisJson("leg_left")
+    #     elif i == 6:
+    #         AnalysisJson("leg_right")
+    #     elif i == 7:
+    #         AnalysisJson("sit")
+    #     elif i == 8:
+    #         AnalysisJson("arm_left")
+    #     elif i == 9:
+    #         AnalysisJson("stand")
+    #     elif i == 10:
+    #         AnalysisJson("stand_c109")
+    #     elif i == 11:
+    #         AnalysisJson("wave_left")
+    #     elif i == 12:
+    #         AnalysisJson("wave_right")
+    #     elif i == 13:
+    #         AnalysisJson("wave_right_MI")
+    #     elif i == 14:
+    #         AnalysisJson("wave_right_H6C")
+    #     # elif i == 15:
+    #     #     AnalysisJson("arm_left")
+    #     else:
+    #         AnalysisJson("wave_right_6C")
+    # po25,po14 = AnalysisJson()
+    # draw_single_pic25(247,po25,"CSI_OUTPUT")
+    # draw_single_pic(247,po14,"CSI_OUTPUT")
     
 
 

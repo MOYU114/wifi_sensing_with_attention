@@ -27,14 +27,14 @@ class EncoderEv(nn.Module):
     def __init__(self, input_dim):
         super(EncoderEv, self).__init__()
         self.gen = nn.Sequential(
-            nn.Conv3d(input_dim, 16, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(16),
+            nn.Conv3d(input_dim, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2),
-            nn.Conv3d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(64, 32, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm3d(32),
             nn.LeakyReLU(0.2),
-            nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64),
+            nn.Conv3d(32, 16, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(16),
             nn.LeakyReLU(0.2)
             )
 
@@ -46,13 +46,13 @@ class EncoderEv(nn.Module):
 class DecoderDv(nn.Module):
     def __init__(self, latent_dim, output_dim):
         super(DecoderDv, self).__init__()
-        self.deconv1 = nn.ConvTranspose3d(latent_dim, 64, kernel_size=3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm3d(64)
+        self.deconv1 = nn.ConvTranspose3d(latent_dim, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm3d(32)
         self.relu = nn.ReLU()
-        self.deconv2 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm3d(32)
+        self.deconv2 = nn.ConvTranspose3d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm3d(64)
         self.relu = nn.ReLU()
-        self.deconv3 = nn.ConvTranspose3d(32, output_dim, kernel_size=3, stride=1, padding=1)
+        self.deconv3 = nn.ConvTranspose3d(64, output_dim, kernel_size=3, stride=1, padding=1)
         self.bn3 = nn.BatchNorm3d(28)
         self.relu = nn.ReLU()
 
@@ -66,18 +66,18 @@ class DiscriminatorC(nn.Module):
     def __init__(self, input_dim):
         super(DiscriminatorC, self).__init__()
         self.f1 = nn.Sequential(
-            nn.Conv3d(input_dim, 16, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(16),
+            nn.Conv3d(input_dim, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2)
             )
         self.f2 = nn.Sequential(
-            nn.Conv3d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(64, 32, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm3d(32),
             nn.LeakyReLU(0.2)
             )
         self.out = nn.Sequential(
-            nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64),
+            nn.Conv3d(32, 16, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(16),
             nn.Sigmoid()
             )
 
@@ -264,12 +264,16 @@ student_weights = {"wV": 0.5, "wS": 1.0}
 
 # Initialize models
 ev_input_dim = 28
-ev_latent_dim = 64
+ev_latent_dim = 16
 es_input_dim = 10
 es_hidden_dim = 400
 dv_output_dim = 28
-CSI_PATH="./data/CSI_in.csv"
-Video_PATH="./data/points_in.csv"
+# CSI_PATH="./data/CSI_in.csv"
+# Video_PATH="./data/points_in.csv"
+CSI_PATH = "./data/static/data/device/CSI_static_6C.csv"
+Video_PATH = "./data/static/data/device/points_static.csv"
+Video_test = "./data/static/data/device/points_arm_left.csv"
+CSI_test = "./data/static/data/device/CSI_arm_left_6C_1.csv"
 CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
 Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
 
@@ -291,20 +295,42 @@ aa = pd.DataFrame(data1)
 #aa = pd.read_csv(CSI_PATH, header=None,delimiter=",")
 ff = pd.read_csv(Video_PATH, header=None)
 
-def fillna_with_previous_values(s):
-    non_nan_values = s[s.notna()].values
-    # Gets the location of the missing value
-    nan_indices = s.index[s.isna()]
-    # Calculate the number of elements to fill
+# def fillna_with_previous_values(s):
+#     non_nan_values = s[s.notna()].values
+#     nan_indices = s.index[s.isna()]
+#     n_fill = len(nan_indices)
+#     n_repeat = int(np.ceil(n_fill / len(non_nan_values)))
+#     fill_values = np.tile(non_nan_values, n_repeat)[:n_fill]
+#     fill_values = [value for value in fill_values if value != '']
+#     s.iloc[nan_indices] = fill_values
+#     return s
+def fillna_with_previous_values(row):
+    non_nan_values = row[row.notna()].values
+    nan_indices = row.index[row.isna()]
     n_fill = len(nan_indices)
-    # Count the number of repetitions required
-    n_repeat = int(np.ceil(n_fill / len(non_nan_values)))
-    # Generate the fill value
-    fill_values = np.tile(non_nan_values, n_repeat)[:n_fill]
-    # Fill missing value
-    s.iloc[nan_indices] = fill_values
-    return s
-aa=aa.apply(fillna_with_previous_values,axis=1)
+    
+    if n_fill == 0:
+        return row
+    
+    # 处理非数值类型的情况
+    if not pd.api.types.is_numeric_dtype(row.dtype):
+        fill_values = np.tile(non_nan_values, n_fill)[:n_fill]
+        row.iloc[nan_indices] = fill_values
+    else:
+        # 处理数值类型的情况，只转换数值，将非数值保留
+        numeric_values = pd.to_numeric(non_nan_values, errors='coerce')
+        fill_values = np.tile(numeric_values, n_fill)[:n_fill]
+        row.iloc[nan_indices] = fill_values
+    return row
+
+# 使用 fillna 方法填充空字符串，并将空字符串替换为 NaN
+aa = aa.apply(lambda x: x.replace('', np.nan))
+aa = aa.apply(fillna_with_previous_values, axis=1)
+
+# 使用 fillna 方法将 NaN 填充为 0
+aa = aa.fillna(0)
+
+# aa=aa.apply(fillna_with_previous_values,axis=1)
 
 # array_length = 50
 # result_array = np.zeros(array_length, dtype=int)
@@ -319,9 +345,9 @@ Video_train = ff.values.astype('float32')#共990行，每行28个数据，为关
 # Video_train = Video_train[:,result_array]
 CSI_train = aa.values.astype('float32')
 
-merged_index = group_list(Video_train)
-Video_train = Video_train[merged_index,:]
-CSI_train = CSI_train[merged_index,:]
+# merged_index = group_list(Video_train)
+# Video_train = Video_train[merged_index,:]
+# CSI_train = CSI_train[merged_index,:]
 
 CSI_train = CSI_train/np.max(CSI_train)
 Video_train = Video_train.reshape(len(Video_train),14,2)#分成990组14*2(x,y)的向量
@@ -350,10 +376,28 @@ a_train = data[0:train_data_length,28:778]
 # a = a.view(100,50,10)
 original_length = f_train.shape[0]
 batch_size = 256#如果调整训练集测试集大小，大小记得调整数值
+
+with open(CSI_test, "r") as csvfilee:
+    csvreadere = csv.reader(csvfilee)
+    data2 = list(csvreadere)  # 将读取的数据转换为列表
+csi_test = pd.DataFrame(data2)
+test_bb = csi_test.apply(fillna_with_previous_values,axis=1)
+test_bb = test_bb.values.astype('float32')
+csi_test = test_bb / np.max(test_bb)
+b = torch.from_numpy(csi_test).double()
+b = b.view(len(b),int(len(csi_test[0])/10),10)
+
+video_test = pd.read_csv(Video_test, header=None)
+video_test = video_test.values.astype('float32')
+video_test = video_test.reshape(len(video_test), 14, 2)
+video_test = video_test / [1280, 720]
+video_test = video_test.reshape(len(video_test), -1)
+g = torch.from_numpy(video_test).double()
+
 #剩余作为测试
-g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
-b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()
-b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
+# g = torch.from_numpy(data[train_data_length:data_length,0:28]).double()
+# b = torch.from_numpy(data[train_data_length:data_length,28:778]).double()
+# b = b.view(test_data_length,int(len(a_train[0])/10),10)#输入的维度可能不同，需要对输入大小进行动态调整
 
 
 # 训练模型
@@ -402,6 +446,7 @@ for epoch in range(num_epochs):
 student_model = StudentModel(dv_output_dim, es_input_dim, es_hidden_dim, ev_latent_dim).to(device)
 student_model.student_encoder_es.load_state_dict(model.student_encoder_es.state_dict())
 student_model.student_decoder_ds.load_state_dict(model.teacher_decoder_dv.state_dict())
+torch.save(student_model.state_dict(), './model/baseline2_sta.pth')
 # 在测试阶段只有学生模型的自编码器工作
 with torch.no_grad():
     b = b.to(device)

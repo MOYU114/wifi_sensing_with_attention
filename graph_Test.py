@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 training = False
 #读取数据，并对数据进行处理，准备绘制图像
-CSI_OUTPUT_PATH="./data/output/CSI_merged_output.csv"
-Video_OUTPUT_PATH="./data/output/points_merged_output.csv"
-#Video_OUTPUT_PATH="./data/points_train.csv"
+CSI_OUTPUT_PATH="./data/output/CSI_merged_output_training.csv"
+Video_OUTPUT_PATH="./data/output/real_output_training.csv"
+# CSI_OUTPUT_PATH="./data/output/CSI_1.csv"
+# Video_OUTPUT_PATH="./data/static/data/device/points_right_left_leg_stand_sit.csv"
 CSI_OUTPUT_TRAINING_PATH="./data/output/real_output_training.csv"
 Video_OUTPUT_TRAINING_PATH="./data/output/points_merged_output_training.csv"
 if training:
@@ -47,15 +48,19 @@ def draw_single_pic(i,arrary,pic_name):
     plt.plot([x[1], x[11]], [y[1], y[11]])
     plt.plot([x[11], x[12]], [y[11], y[12]])
     plt.plot([x[12], x[13]], [y[12], y[13]])
+    # 去除坐标轴上的数字
+    plt.xticks([])
+    plt.yticks([])
+    plt.axis('tight')
     plt.show()
-    plt.savefig(SAVE_PATH+pic_name)
+    # plt.savefig(SAVE_PATH+pic_name,dpi=600)
     plt.clf()
-pics_num = 40
-base=0
+pics_num = 50
+base=20
 for i in range(base,base+pics_num):
     num=i+1
     draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
-    # draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
+    draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
     #draw_single_pic(i,CSI_OUTPUT,"CSI_OUTPUT_"+str(num)+".png")
     #draw_single_pic(i,Video_OUTPUT,"Video_OUTPUT_"+str(num)+".png")
 

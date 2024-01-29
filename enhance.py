@@ -17,7 +17,9 @@ class EncoderEv(nn.Module):
         self.L1=nn.Sequential(
             nn.Linear(input_dim,25),
             nn.LeakyReLU(),
-            nn.Linear(25, embedding_dim),
+            nn.Linear(25, 64),
+            nn.LeakyReLU(),
+            nn.Linear(64, embedding_dim),
             nn.LeakyReLU(),
         )
     def forward(self, x):
@@ -31,7 +33,9 @@ class DecoderDv(nn.Module):
     def __init__(self, embedding_dim, output_dim=50):
         super(DecoderDv, self).__init__()
         self.L2=nn.Sequential(
-            nn.Linear(embedding_dim, 25),
+            nn.Linear(embedding_dim, 64),
+            nn.LeakyReLU(),
+            nn.Linear(64, 25),
             nn.LeakyReLU(),
             nn.Linear(25, output_dim),
             nn.Sigmoid() #？
@@ -43,11 +47,11 @@ class DecoderDv(nn.Module):
         return x
     
 class TeacherModel(nn.Module):
-    def __init__(self, input_dim,  output_dim, embedding_dim=64):
+    def __init__(self, input_dim,  output_dim, embedding_dim=128):
         super(TeacherModel, self).__init__()
-        self.EvIn = EncoderEv(embedding_dim, input_dim)
-        self.Evout = EncoderEv(embedding_dim, input_dim)
-        self.Dv = DecoderDv(embedding_dim, output_dim)
+        self.EvIn = EncoderEv(embedding_dim, input_dim).double()
+        self.EvOut = EncoderEv(embedding_dim, input_dim).double()
+        self.Dv = DecoderDv(embedding_dim, output_dim).double()
     def forward(self,r,f):
         s = self.EvIn(r)
         z = self.EvOut(f)
@@ -129,14 +133,14 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.5, 0.999))
 criterion1 = nn.MSELoss()
 criterion2 = nn.BCEWithLogitsLoss()
 
-path_in = "./data/inout/CSI_leg_right_in1.csv"
-path_out = "./data/inout/CSI_leg_right_out1.csv"
+CSI_enhance_in = "./data/inout/static/CSI_in_static.csv"
+CSI_enhance_out = "./data/inout/static/CSI_out_static.csv"
 
-with open(path_in, "r") as csvfile:
+with open(CSI_enhance_in, "r") as csvfile:
     csvreader = csv.reader(csvfile)
     data1 = list(csvreader)  # 将读取的数据转换为列表
 CSIin = pd.DataFrame(data1)
-with open(path_out, "r") as csvfile:
+with open(CSI_enhance_out, "r") as csvfile:
     csvreader = csv.reader(csvfile)
     data2 = list(csvreader)  # 将读取的数据转换为列表
 CSIout = pd.DataFrame(data2)
@@ -157,11 +161,11 @@ in_real = data[:, :50]
 out_fake = data[:, 50:]
 original_length = in_real.shape[0]
 
-num_epochs = 3000
+num_epochs = 3
 for epoch in range(num_epochs):
     random_indices = np.random.choice(original_length, size=batch_size, replace=False)
-    raw_re = torch.from_numpy(in_real[random_indices, :]).float()
-    raw_fa = torch.from_numpy(out_fake[random_indices, :]).float()
+    raw_re = torch.from_numpy(in_real[random_indices, :]).double()
+    raw_fa = torch.from_numpy(out_fake[random_indices, :]).double()
     # re = raw_re.view(batch_size, 5, 10)  # .shape(batch_size,28,1,1)
     # fa = raw_fa.view(batch_size, 5, 10)
     re = raw_re.view(batch_size, 50)  
